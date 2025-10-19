@@ -5,7 +5,17 @@
       "Bash(git init)",
       "Bash(git branch -M main)",
       "Bash(git remote add origin https://github.com/davidpestilli/escala.git)",
-      "Bash(git add .)"
+      "Bash(git add .)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: Sistema de Gestão de Escalas de Teletrabalho\n\n- Configuração completa do projeto React + TypeScript + Vite\n- Integração com Supabase Auth (substituindo mock)\n- Scripts SQL para criação de tabelas no Supabase\n- Configuração do GitHub Actions para deploy automático\n- Estrutura de componentes e hooks completa\n- Sistema de gestão de funcionários, escalas, férias e feriados\n- Análise de cobertura por equipe\n- Templates de horário (3x2, 4x1, rotação de managers)\n- Relatórios e exportação CSV\n- Row Level Security (RLS) configurado\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push -u origin main)",
+      "Bash(git add INSTRUCOES_FINAIS.md)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdiciona instruções finais de configuração\n\n- Passo a passo para executar SQL no Supabase\n- Configuração de autenticação\n- Setup de GitHub Secrets\n- Habilitação do GitHub Pages\n- Checklist completo\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push)",
+      "Bash(git add src/components/Login.tsx)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nSimplifica tela de login\n\n- Remove valor padrão ''teste@teste.com'' do campo email\n- Remove link de cadastro ''Não tem conta? Crie uma aqui''\n- Remove mensagem de teste do sistema\n- Simplifica componente para apenas login (remove signup)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\nRemove botão de mostrar/ocultar senha\n\n- Remove ícone de olho (👁️) do campo de senha\n- Remove funcionalidade de toggle show/hide password\n- Simplifica ainda mais a tela de login\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git add -A)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nCorrige base path do GitHub Pages\n\n- Remove vite.config.js duplicado com configuração incorreta\n- Mantém apenas vite.config.ts com base: ''/escala/''\n- Resolve erro 404 nos assets do GitHub Pages\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []
