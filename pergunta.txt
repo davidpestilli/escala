@@ -1,0 +1,6 @@
+1. Crie os scripts o mais permissível possível para que possam ser executados no supabase
+2. Utilize supabase auth
+3. Já coloquei na pasta um arquivo .env com as keys que vão ser utilizadas.
+4. Criei um projeto no git com o seguinte endereço https://github.com/davidpestilli/escala.git
+5. Inicie o repositório git na pasta e configure para deploy com actions
+6. O sistema será publicado para exibição no GitHub pages.

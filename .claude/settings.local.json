@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir C:Usersdavidescala)",
+      "Bash(git init)",
+      "Bash(git branch -M main)",
+      "Bash(git remote add origin https://github.com/davidpestilli/escala.git)",
+      "Bash(git add .)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
