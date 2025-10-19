@@ -2,40 +2,27 @@ import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 
 const Login: React.FC = () => {
-  const [email, setEmail] = useState('teste@teste.com');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
-  const { signInWithEmail, signUpWithEmail } = useAuth();
+  const { signInWithEmail } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setSuccess('');
 
-    console.log('Submetendo formulário:', { email, password, isSignUp });
+    console.log('Submetendo formulário:', { email, password });
 
     try {
-      if (isSignUp) {
-        const { error } = await signUpWithEmail(email, password);
-        if (error) {
-          setError(error.message || 'Erro no cadastro');
-        } else {
-          setSuccess('Conta criada com sucesso! Verifique seu email para confirmar.');
-          setIsSignUp(false);
-        }
+      const { error } = await signInWithEmail(email, password);
+      if (error) {
+        setError(error.message || 'Erro no login');
       } else {
-        const { error } = await signInWithEmail(email, password);
-        if (error) {
-          setError(error.message || 'Erro no login');
-        } else {
-          console.log('Login realizado com sucesso!');
-        }
+        console.log('Login realizado com sucesso!');
       }
     } catch (err: any) {
       console.error('Erro inesperado:', err);
@@ -61,7 +48,7 @@ const Login: React.FC = () => {
             Escalas de Trabalho
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            {isSignUp ? 'Criar nova conta' : 'Entre em sua conta'}
+            Entre em sua conta
           </p>
         </div>
 
@@ -71,12 +58,6 @@ const Login: React.FC = () => {
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
               <div className="text-red-600 text-sm font-bold">⚠️</div>
               <span className="text-sm text-red-600">{error}</span>
-            </div>
-          )}
-
-          {success && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <span className="text-sm text-green-600">{success}</span>
             </div>
           )}
 
@@ -111,7 +92,7 @@ const Login: React.FC = () => {
                   id="password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
-                  autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                  autoComplete="current-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -139,37 +120,10 @@ const Login: React.FC = () => {
               {loading ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
               ) : (
-                isSignUp ? 'Criar Conta' : 'Entrar'
+                'Entrar'
               )}
             </button>
           </form>
-
-          {/* Toggle Sign Up/Sign In */}
-          <div className="mt-6 text-center">
-            <button
-              type="button"
-              onClick={() => {
-                setIsSignUp(!isSignUp);
-                setError('');
-                setSuccess('');
-              }}
-              className="text-sm text-blue-600 hover:text-blue-500 font-medium"
-            >
-              {isSignUp 
-                ? 'Já tem uma conta? Entre aqui' 
-                : 'Não tem conta? Crie uma aqui'
-              }
-            </button>
-          </div>
-
-          {/* Demo info */}
-          <div className="mt-6 p-3 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="text-xs text-blue-800 text-center">
-              <strong>🚀 Teste o Sistema</strong><br />
-              Email: teste@teste.com<br />
-              Senha: 123456
-            </p>
-          </div>
         </div>
       </div>
     </div>
