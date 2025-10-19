@@ -1,15 +1,23 @@
-Modifique a tela de login da seguinte forma
+Outro detalhe.
 
-1. Retire o texto padrão na caixa email
+Na aba Escalas, no componente Ver Detalhes, há um campo que mostra 
 
-teste@teste.com
+Dias Presencial (Orientativo)
+3 dias/semana
+Orientativo
 
-2. Retire os links
+Esse campo sempre aparece assim seja o regime de trabalho Sempre Home Office ou Sempre Presencial.
 
-Não tem conta? Crie uma aqui
+Se a escolha tiver sido Sempre Presencial, então o correto seria
 
-3. Retire a mensagem
+Dias Presencial (Orientativo)
+5 dias/semana
+Orientativo
 
-🚀 Teste o Sistema
-Email: teste@teste.com
-Senha: 123456
+Se a escolha tiver sido Sempre Home Office, então o correto seria
+
+Dias Presencial (Orientativo)
+0 dias/semana
+Orientativo
+
+Além disso, retire a palavra Orientativo onde aparecer. É desnecessária.

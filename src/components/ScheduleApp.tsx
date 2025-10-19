@@ -1,16 +1,32 @@
-import React, { useState } from 'react';
-import { Calendar, Users, Download, Filter, Plus, AlertTriangle, Settings, Copy, RotateCcw, FileText, Edit, X, HelpCircle, Trash2, Save, FolderOpen, Archive } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Calendar, Users, Download, Filter, Plus, AlertTriangle, Settings, Copy, RotateCcw, FileText, Edit, X, HelpCircle, Trash2, Save, FolderOpen, Archive, Shield, LogOut } from 'lucide-react';
+import { useTeams, useUserProfiles, useEmployees } from '../hooks/useSupabaseData';
+import { useAuth } from '../hooks/useAuth';
+import TeamsTab from './tabs/TeamsTab';
+import UsersTab from './tabs/UsersTab';
+import { AddEmployeeModal } from './modals/AddEmployeeModal';
 
 const ScheduleApp = () => {
+  // Hooks para autenticação
+  const { signOut } = useAuth();
+
+  // Hooks para equipes e perfis de usuário
+  const { teams: dbTeams, addTeam, updateTeam, deleteTeam } = useTeams();
+  const { userProfiles, currentUserProfile, addUserProfile, updateUserProfile, deleteUserProfile } = useUserProfiles();
+  const { employees: dbEmployees, addEmployee: addEmployeeDb, updateEmployee: updateEmployeeDb, deleteEmployee: deleteEmployeeDb } = useEmployees();
+
   const [currentDate, setCurrentDate] = useState(new Date());
   const [employees, setEmployees] = useState([]);
-  
+
   const [schedules, setSchedules] = useState({});
   const [vacations, setVacations] = useState({});
   const [maxCapacity, setMaxCapacity] = useState(10);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [activeTab, setActiveTab] = useState('calendar');
-  const [userRole, setUserRole] = useState('admin');
+
+  // Role agora vem do perfil do banco, com fallback para 'employee' se não houver perfil
+  const userRole = currentUserProfile?.role || 'employee';
+  const userNick = currentUserProfile?.nick || 'Usuário';
   
   // Estados para sistema de múltiplos salvamentos
   const [isSaving, setIsSaving] = useState(false);
@@ -23,7 +39,7 @@ const ScheduleApp = () => {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
   
-  const [filters, setFilters] = useState({ employee: '', team: '', currentStatus: '' });
+  const [filters, setFilters] = useState({ employee: '', team: 'VAZIO', currentStatus: '' });
   const [showImportModal, setShowImportModal] = useState(false);
   const [importText, setImportText] = useState('');
   const [newEmployee, setNewEmployee] = useState({
@@ -35,7 +51,9 @@ const ScheduleApp = () => {
   const [expandedPersonId, setExpandedPersonId] = useState(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [activePersonTab, setActivePersonTab] = useState('dados');
-  const [personFilters, setPersonFilters] = useState({ name: '', type: '' });
+  const [personFilters, setPersonFilters] = useState({ name: '', type: '', team: 'VAZIO' });
+  const [showNickSuggestions, setShowNickSuggestions] = useState(false);
+  const [showCalendarSuggestions, setShowCalendarSuggestions] = useState(false);
   const [showVacationForm, setShowVacationForm] = useState(false);
   const [vacationPersonId, setVacationPersonId] = useState(null);
   const [vacationData, setVacationData] = useState({ start: '', end: '' });
@@ -114,6 +132,13 @@ const ScheduleApp = () => {
       setActiveTab('calendar');
     }
   }, [userRole, activeTab]);
+
+  // Sincronizar employees do Supabase com estado local
+  React.useEffect(() => {
+    if (dbEmployees) {
+      setEmployees(dbEmployees);
+    }
+  }, [dbEmployees]);
 
   // Funções para sistema de múltiplos salvamentos
   const saveScheduleToSlot = async (slotId, customName = '') => {
@@ -307,8 +332,8 @@ const ScheduleApp = () => {
         setHasUnsavedChanges(false);
         setActivePersonTab('dados');
         setVacationPersonId(null);
-        setFilters({ employee: '', team: '', currentStatus: '' });
-        setPersonFilters({ name: '', type: '' });
+        setFilters({ employee: '', team: 'VAZIO', currentStatus: '' });
+        setPersonFilters({ name: '', type: '', team: 'VAZIO' });
         
         const change = {
           id: Date.now(),
@@ -386,17 +411,93 @@ const ScheduleApp = () => {
     
     const employee = employees.find(emp => emp.id === employeeId);
     if (!employee) return null;
-    
+
     switch (employee.type) {
       case 'always_office':
         return 'office';
       case 'always_home':
         return 'home';
       case 'variable':
-        return null;
+        // Lógica automática para Presença Variável
+        return getVariableEmployeeAutoStatus(employee, date);
       default:
         return null;
     }
+  };
+
+  // Função auxiliar para determinar status automático de funcionários com Presença Variável
+  const getVariableEmployeeAutoStatus = (employee, date) => {
+    const dayOfWeek = date.getDay();
+
+    // Ignora fins de semana
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      return null;
+    }
+
+    const officeDays = employee.officeDays || 3; // Padrão: 3 dias presenciais
+    const preferences = employee.preferences || {};
+
+    // Mapeamento de dia da semana para chave de preferences
+    const dayKeys = {
+      1: 'monday',
+      2: 'tuesday',
+      3: 'wednesday',
+      4: 'thursday',
+      5: 'friday'
+    };
+
+    const dayKey = dayKeys[dayOfWeek];
+
+    // Se o dia está marcado como preferência de home office
+    if (preferences[dayKey] === 'home') {
+      return 'home';
+    }
+
+    // NOVA LÓGICA: Contar quantos dias estão marcados como preferência de home
+    const homePrefDays = Object.values(preferences).filter(v => v === 'home').length;
+
+    // Se há preferências de home, os dias restantes DEVEM ser presenciais
+    if (homePrefDays > 0) {
+      // Se este dia NÃO está nas preferências de home, deve ser presencial
+      // para garantir que atinja o número de dias presenciais
+      const remainingOfficeDays = 5 - homePrefDays; // Dias disponíveis para presencial
+
+      // Se os dias de home configurados deixam exatamente officeDays para presencial
+      // então todos os dias não marcados como home devem ser presenciais
+      if (remainingOfficeDays === officeDays) {
+        return 'office';
+      }
+    }
+
+    // Distribuição automática para dias sem preferência marcada
+    // Conta quantos dias da semana já passaram para distribuir uniformemente
+    const weekOfMonth = Math.floor((date.getDate() - 1) / 7);
+    const workWeekDays = [1, 2, 3, 4, 5]; // Seg a Sex
+    const dayIndex = workWeekDays.indexOf(dayOfWeek);
+
+    if (dayIndex === -1) return null;
+
+    // Identifica quais dias NÃO estão nas preferências de home
+    const availableDays = workWeekDays.filter(d => preferences[dayKeys[d]] !== 'home');
+    const availableCount = availableDays.length;
+
+    // Se não há dias disponíveis suficientes, retorna home
+    if (availableCount === 0) return 'home';
+
+    // Distribui os dias presenciais entre os dias disponíveis
+    const neededOfficeDays = Math.min(officeDays, availableCount);
+
+    // Verifica se este dia está entre os dias disponíveis
+    const positionInAvailable = availableDays.indexOf(dayOfWeek);
+
+    if (positionInAvailable === -1) return 'home';
+
+    // Distribui de forma rotativa baseada na semana
+    const rotationOffset = weekOfMonth % availableCount;
+    const rotatedAvailable = [...availableDays.slice(rotationOffset), ...availableDays.slice(0, rotationOffset)];
+
+    // Verifica se este dia está entre os primeiros neededOfficeDays após rotação
+    return rotatedAvailable.slice(0, neededOfficeDays).includes(dayOfWeek) ? 'office' : 'home';
   };
 
   const getOfficeCount = (date) => {
@@ -890,32 +991,105 @@ const ScheduleApp = () => {
   };
 
   const exportToExcel = () => {
-    const days = getDaysInMonth(currentDate).filter(day => day !== null);
-    let csvContent = 'Nome,Equipe,';
-    
-    days.forEach(day => {
-      csvContent += `${day.getDate()}/${day.getMonth() + 1},`;
-    });
-    csvContent += '\n';
-    
+    const allDays = getDaysInMonth(currentDate);
     const filteredEmployees = getFilteredEmployees();
-    
-    filteredEmployees.forEach(emp => {
-      csvContent += `${emp.name},${emp.team || 'Sem equipe'},`;
-      days.forEach(day => {
-        const status = getEmployeeStatus(emp.id, day);
-        const statusText = status ? statusLabels[status] : '';
-        csvContent += `${statusText},`;
-      });
-      csvContent += '\n';
+
+    // Símbolos para status
+    const statusSymbols = {
+      'office': '🟢',
+      'home': '🔵',
+      'vacation': '🟠',
+      'holiday': '⚫'
+    };
+
+    // Organizar dias em semanas (grade de calendário)
+    const weeks = [];
+    let currentWeek = [];
+
+    allDays.forEach((day, index) => {
+      if (day === null) {
+        currentWeek.push(null);
+      } else {
+        currentWeek.push(day);
+      }
+
+      // Domingo é o último dia da semana
+      if ((index + 1) % 7 === 0) {
+        weeks.push(currentWeek);
+        currentWeek = [];
+      }
     });
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+
+    if (currentWeek.length > 0) {
+      weeks.push(currentWeek);
+    }
+
+    let txtContent = '';
+
+    // Título do arquivo
+    txtContent += '═'.repeat(80) + '\n';
+    txtContent += `    ESCALA DE TELETRABALHO - ${monthNames[currentDate.getMonth()].toUpperCase()} ${currentDate.getFullYear()}\n`;
+    txtContent += '═'.repeat(80) + '\n\n';
+
+    // Legenda
+    txtContent += 'LEGENDA: 🟢 Presencial  🔵 Home Office  🟠 Férias  ⚫ Plantão/Feriado\n\n';
+    txtContent += '─'.repeat(80) + '\n\n';
+
+    // Para cada funcionário
+    filteredEmployees.forEach((emp, empIndex) => {
+      if (empIndex > 0) {
+        txtContent += '\n' + '─'.repeat(80) + '\n\n';
+      }
+
+      // Nome e equipe do funcionário
+      txtContent += `FUNCIONÁRIO: ${emp.name}\n`;
+      txtContent += `EQUIPE: ${emp.team || 'Sem equipe'}\n\n`;
+
+      // Cabeçalho dos dias da semana
+      const weekDaysHeader = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
+      txtContent += '    ';
+      weekDaysHeader.forEach(day => {
+        txtContent += day.padEnd(8);
+      });
+      txtContent += '\n';
+      txtContent += '    ' + '─'.repeat(56) + '\n';
+
+      // Imprimir cada semana
+      weeks.forEach(week => {
+        txtContent += '    ';
+        week.forEach(day => {
+          if (day === null) {
+            txtContent += '        '; // Espaço vazio
+          } else {
+            const dayNum = day.getDate().toString().padStart(2, '0');
+            const status = getEmployeeStatus(emp.id, day);
+            const symbol = status ? statusSymbols[status] : '  ';
+            txtContent += `${dayNum}${symbol}   `;
+          }
+        });
+        txtContent += '\n';
+      });
+
+      txtContent += '\n';
+    });
+
+    txtContent += '═'.repeat(80) + '\n';
+
+    // Resumo
+    txtContent += '\nRESUMO:\n';
+    txtContent += `  Total de funcionários: ${filteredEmployees.length}\n`;
+    txtContent += `  Período: ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}\n`;
+    txtContent += `  Gerado em: ${new Date().toLocaleString('pt-BR')}\n`;
+    txtContent += '\n' + '═'.repeat(80) + '\n';
+
+    // Download do arquivo
+    const blob = new Blob([txtContent], { type: 'text/plain; charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `escala_${currentDate.getMonth() + 1}_${currentDate.getFullYear()}.csv`;
+    a.download = `escala_${currentDate.getMonth() + 1}_${currentDate.getFullYear()}.txt`;
     a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const importEmployees = () => {
@@ -952,39 +1126,108 @@ const ScheduleApp = () => {
     );
   };
 
-  const addEmployee = () => {
+  const addEmployee = async () => {
     if (newEmployee.name.trim()) {
-      const newPerson = {
-        id: Date.now(),
-        ...newEmployee,
-        preferences: {}
-      };
-      setEmployees(prev => [...prev, newPerson]);
-      setNewEmployee({ name: '', type: 'variable', isManager: false, team: '', officeDays: 3, workingHours: '9-17' });
-      setShowAddEmployee(false);
-      
-      setExpandedPersonId(newPerson.id);
-      setEditingPerson(newPerson);
-      setHasUnsavedChanges(false);
-      setActivePersonTab('dados');
+      // Verificar se já existe um employee com o mesmo nome
+      const existingEmployee = employees.find(
+        emp => emp.name.toLowerCase() === newEmployee.name.toLowerCase()
+      );
+
+      if (existingEmployee) {
+        alert(`Já existe uma escala configurada para "${newEmployee.name}". Não é possível criar duplicados.`);
+        return;
+      }
+
+      try {
+        // Salvar no Supabase
+        const savedEmployee = await addEmployeeDb(newEmployee);
+
+        if (savedEmployee) {
+          // Atualizar estado local
+          setEmployees(prev => [...prev, savedEmployee]);
+          setNewEmployee({ name: '', type: 'variable', isManager: false, team: '', officeDays: 3, workingHours: '9-17' });
+          setShowAddEmployee(false);
+
+          setExpandedPersonId(savedEmployee.id);
+          setEditingPerson(savedEmployee);
+          setHasUnsavedChanges(false);
+          setActivePersonTab('dados');
+        }
+      } catch (error) {
+        console.error('Erro ao adicionar funcionário:', error);
+        alert('Erro ao salvar funcionário. Por favor, tente novamente.');
+      }
     }
   };
 
-  const updatePerson = (personId, updates) => {
-    setEmployees(prev => prev.map(emp => 
-      emp.id === personId ? { ...emp, ...updates } : emp
-    ));
-    
-    if (editingPerson && editingPerson.id === personId) {
-      setEditingPerson(prev => ({ ...prev, ...updates }));
+  const deletePerson = async (personId) => {
+    try {
+      // Deletar no Supabase
+      await deleteEmployeeDb(personId);
+
+      // Atualizar estado local
+      setEmployees(prev => prev.filter(emp => emp.id !== personId));
+
+      // Limpar estados relacionados
+      if (expandedPersonId === personId) {
+        setExpandedPersonId(null);
+        setEditingPerson(null);
+        setHasUnsavedChanges(false);
+      }
+
+      setSchedules(prev => {
+        const newSchedules = { ...prev };
+        delete newSchedules[personId];
+        return newSchedules;
+      });
+
+      setVacations(prev => {
+        const newVacations = { ...prev };
+        delete newVacations[personId];
+        return newVacations;
+      });
+
+      if (selectedPerson && selectedPerson.id === personId) {
+        setSelectedPerson(null);
+      }
+
+      const person = employees.find(emp => emp.id === personId);
+      const change = {
+        id: Date.now(),
+        timestamp: new Date(),
+        action: `❌ Excluiu a pessoa ${person?.name || 'desconhecida'}`
+      };
+      setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
+    } catch (error) {
+      console.error('Erro ao excluir funcionário:', error);
+      alert('Erro ao excluir funcionário. Por favor, tente novamente.');
     }
-    
-    const change = {
-      id: Date.now(),
-      timestamp: new Date(),
-      action: `Atualizou dados de ${updates.name}`
-    };
-    setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
+  };
+
+  const updatePerson = async (personId, updates) => {
+    try {
+      // Salvar no Supabase
+      await updateEmployeeDb(personId, updates);
+
+      // Atualizar estado local
+      setEmployees(prev => prev.map(emp =>
+        emp.id === personId ? { ...emp, ...updates } : emp
+      ));
+
+      if (editingPerson && editingPerson.id === personId) {
+        setEditingPerson(prev => ({ ...prev, ...updates }));
+      }
+
+      const change = {
+        id: Date.now(),
+        timestamp: new Date(),
+        action: `Atualizou dados de ${updates.name}`
+      };
+      setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
+    } catch (error) {
+      console.error('Erro ao atualizar funcionário:', error);
+      alert('Erro ao salvar alterações. Por favor, tente novamente.');
+    }
   };
 
   const setPersonVacation = (personId, start, end) => {
@@ -1020,21 +1263,32 @@ const ScheduleApp = () => {
 
   const getFilteredEmployeesForDay = (day) => {
     return employees.filter(emp => {
+      // Filtro por nickname
       if (filters.employee && !emp.name.toLowerCase().includes(filters.employee.toLowerCase())) {
         return false;
       }
+
+      // Se há busca por nickname, ignora o filtro de equipe quando estiver como "VAZIO"
+      const hasNicknameSearch = filters.employee && filters.employee.trim() !== '';
+
       if (filters.team) {
-        if (filters.team === 'SEM_EQUIPE') {
+        if (filters.team === 'VAZIO' && !hasNicknameSearch) {
+          return false; // Não mostrar nenhum card quando VAZIO estiver selecionado E não houver busca por nick
+        }
+        // Se há busca por nick, ignora o filtro VAZIO
+        if (filters.team === 'VAZIO' && hasNicknameSearch) {
+          // Continua com os outros filtros
+        } else if (filters.team === 'SEM_EQUIPE') {
           if (emp.team && emp.team.trim() !== '') return false;
-        } else {
+        } else if (filters.team !== 'VAZIO') {
           if (emp.team !== filters.team) return false;
         }
       }
-      
+
       if (!filters.currentStatus) {
         return true;
       }
-      
+
       const statusNesteDia = getEmployeeStatus(emp.id, day);
       return statusNesteDia === filters.currentStatus;
     });
@@ -1042,16 +1296,29 @@ const ScheduleApp = () => {
 
   const getFilteredEmployees = () => {
     return employees.filter(emp => {
+      // Filtro por nickname
       if (filters.employee && !emp.name.toLowerCase().includes(filters.employee.toLowerCase())) {
         return false;
       }
+
+      // Se há busca por nickname, ignora o filtro de equipe quando estiver como "VAZIO"
+      // Isso permite que a busca por nick funcione independentemente do filtro de equipe
+      const hasNicknameSearch = filters.employee && filters.employee.trim() !== '';
+
       if (filters.team) {
-        if (filters.team === 'SEM_EQUIPE') {
+        if (filters.team === 'VAZIO' && !hasNicknameSearch) {
+          return false; // Não mostrar nenhum card quando VAZIO estiver selecionado E não houver busca por nick
+        }
+        // Se há busca por nick, ignora o filtro VAZIO
+        if (filters.team === 'VAZIO' && hasNicknameSearch) {
+          // Continua com os outros filtros
+        } else if (filters.team === 'SEM_EQUIPE') {
           return !emp.team || emp.team.trim() === '';
-        } else {
+        } else if (filters.team !== 'VAZIO') {
           return emp.team === filters.team;
         }
       }
+
       if (filters.currentStatus) {
         const currentStatus = getCurrentStatus(emp.id);
         return currentStatus === filters.currentStatus;
@@ -1062,13 +1329,38 @@ const ScheduleApp = () => {
 
   const getFilteredPeople = () => {
     return employees.filter(person => {
+      // Filtro por nome/nick
       if (personFilters.name && !person.name.toLowerCase().includes(personFilters.name.toLowerCase())) {
         return false;
       }
-      if (personFilters.type) {
-        if (personFilters.type === 'manager' && !person.isManager) return false;
-        if (personFilters.type === 'employee' && person.isManager) return false;
+
+      // Se há busca por nickname, ignora o filtro de equipe quando estiver como "VAZIO"
+      const hasNicknameSearch = personFilters.name && personFilters.name.trim() !== '';
+
+      // Filtro por equipe (usando team_id do user_profile)
+      if (personFilters.team) {
+        // Se VAZIO e NÃO há busca por nick, não mostrar nenhum card
+        if (personFilters.team === 'VAZIO' && !hasNicknameSearch) {
+          return false;
+        }
+
+        // Se há busca por nick, ignora o filtro VAZIO
+        if (personFilters.team === 'VAZIO' && hasNicknameSearch) {
+          // Continua com os outros filtros
+          return true;
+        }
+
+        // Buscar o perfil do usuário para pegar o team_id
+        const userProfile = userProfiles.find(profile =>
+          profile.nick.toLowerCase() === person.name.toLowerCase() ||
+          profile.user_email === person.name // Assumindo que vamos adicionar email depois
+        );
+
+        if (!userProfile || userProfile.team_id !== personFilters.team) {
+          return false;
+        }
       }
+
       return true;
     });
   };
@@ -1242,114 +1534,148 @@ const ScheduleApp = () => {
       `}</style>
       
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-300">
+        {/* Header Superior - Título, Usuário e Sair */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-4 border border-gray-300">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Calendar className="w-8 h-8 text-blue-600" />
-              <h1 className="text-xl font-semibold text-gray-900">Escalas de Trabalho</h1>
+              <h1 className="text-xl font-semibold text-gray-900">Sistema de Escalas de Teletrabalho</h1>
             </div>
-            
-            <div className="flex items-center gap-4">
-              {/* Seletor de Perfil */}
+
+            <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-2 border border-gray-400">
-                <div className="text-sm text-gray-800">👤</div>
-                <select
-                  value={userRole}
-                  onChange={(e) => setUserRole(e.target.value)}
-                  className="border-0 bg-transparent text-sm font-medium text-gray-900 focus:ring-0 focus:outline-none cursor-pointer"
-                >
-                  <option value="admin">👑 Administrador</option>
-                  <option value="manager">👨‍💼 Gestor</option>
-                  <option value="employee">👤 Colaborador</option>
-                </select>
+                <Shield className="w-4 h-4 text-gray-600" />
+                <div className="text-sm">
+                  <span className="font-medium text-gray-900">{userNick}</span>
+                  <span className="text-gray-600 ml-2">
+                    {userRole === 'admin' && '👑 Admin'}
+                    {userRole === 'manager' && '👨‍💼 Gerente'}
+                    {userRole === 'employee' && '👤 Colaborador'}
+                  </span>
+                </div>
               </div>
-              
+
               <button
-                onClick={() => setShowHelp(true)}
-                className="flex items-center gap-2 p-2 text-gray-800 hover:bg-gray-100 rounded-lg border border-gray-400 hover:border-gray-500"
-                title="Ajuda e Legendas"
+                onClick={signOut}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 border border-red-800 font-medium"
               >
-                <HelpCircle className="w-4 h-4" />
-              </button>
-              <button
-                onClick={exportToExcel}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 border border-green-800 font-medium"
-              >
-                <Download className="w-4 h-4" />
-                Exportar
+                <LogOut className="w-4 h-4" />
+                Sair
               </button>
             </div>
           </div>
+        </div>
 
-          {/* Tabs */}
-          <div className="flex gap-4 mt-4 border-b border-gray-300">
-            <button
-              onClick={() => setActiveTab('calendar')}
-              className={`pb-2 px-1 border-b-2 font-medium transition-all ${
-                activeTab === 'calendar' 
-                  ? 'border-blue-600 text-blue-600' 
-                  : 'border-transparent text-gray-800 hover:text-gray-900'
-              }`}
-            >
-              <Calendar className="w-4 h-4 inline mr-2" />
-              Calendário
-            </button>
-            <button
-              onClick={() => userRole !== 'employee' && setActiveTab('people')}
-              disabled={userRole === 'employee'}
-              className={`pb-2 px-1 border-b-2 font-medium transition-all ${
-                userRole === 'employee' 
-                  ? 'text-gray-400 cursor-not-allowed' 
-                  : activeTab === 'people' 
-                    ? 'border-blue-600 text-blue-600' 
+        {/* Container de Navegação */}
+        <div className="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-300">
+          <div className="flex items-center justify-between">
+            {/* Tabs */}
+            <div className="flex gap-4">
+              <button
+                onClick={() => setActiveTab('calendar')}
+                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
+                  activeTab === 'calendar'
+                    ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-gray-800 hover:text-gray-900'
-              }`}
-            >
-              <Users className="w-4 h-4 inline mr-2" />
-              Pessoas
-            </button>
+                }`}
+              >
+                <Calendar className="w-4 h-4 inline mr-2" />
+                Calendário
+              </button>
+              <button
+                onClick={() => userRole !== 'employee' && setActiveTab('people')}
+                disabled={userRole === 'employee'}
+                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
+                  userRole === 'employee'
+                    ? 'text-gray-400 cursor-not-allowed'
+                    : activeTab === 'people'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-800 hover:text-gray-900'
+                }`}
+              >
+                <Users className="w-4 h-4 inline mr-2" />
+                Escalas
+              </button>
+              <button
+                onClick={() => userRole !== 'employee' && setActiveTab('templates')}
+                disabled={userRole === 'employee'}
+                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
+                  userRole === 'employee'
+                    ? 'text-gray-400 cursor-not-allowed'
+                    : activeTab === 'templates'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-800 hover:text-gray-900'
+                }`}
+              >
+                <FileText className="w-4 h-4 inline mr-2" />
+                Templates
+              </button>
+              <button
+                onClick={() => userRole !== 'employee' && setActiveTab('reports')}
+                disabled={userRole === 'employee'}
+                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
+                  userRole === 'employee'
+                    ? 'text-gray-400 cursor-not-allowed'
+                    : activeTab === 'reports'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-800 hover:text-gray-900'
+                }`}
+              >
+                <FileText className="w-4 h-4 inline mr-2" />
+                Relatórios
+              </button>
+              <button
+                onClick={() => userRole !== 'employee' && setActiveTab('settings')}
+                disabled={userRole === 'employee'}
+                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
+                  userRole === 'employee'
+                    ? 'text-gray-400 cursor-not-allowed'
+                    : activeTab === 'settings'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-800 hover:text-gray-900'
+                }`}
+              >
+                <Settings className="w-4 h-4 inline mr-2" />
+                Configurações
+              </button>
+              <button
+                onClick={() => userRole !== 'employee' && setActiveTab('teams')}
+                disabled={userRole === 'employee'}
+                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
+                  userRole === 'employee'
+                    ? 'text-gray-400 cursor-not-allowed'
+                    : activeTab === 'teams'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-800 hover:text-gray-900'
+                }`}
+              >
+                <Users className="w-4 h-4 inline mr-2" />
+                Equipes
+              </button>
+              <button
+                onClick={() => userRole !== 'employee' && setActiveTab('users')}
+                disabled={userRole === 'employee'}
+                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
+                  userRole === 'employee'
+                    ? 'text-gray-400 cursor-not-allowed'
+                    : activeTab === 'users'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-800 hover:text-gray-900'
+                }`}
+              >
+                <Shield className="w-4 h-4 inline mr-2" />
+                Usuários
+              </button>
+            </div>
+
+            {/* Botão de Ajuda */}
             <button
-              onClick={() => userRole !== 'employee' && setActiveTab('templates')}
-              disabled={userRole === 'employee'}
-              className={`pb-2 px-1 border-b-2 font-medium transition-all ${
-                userRole === 'employee' 
-                  ? 'text-gray-400 cursor-not-allowed' 
-                  : activeTab === 'templates' 
-                    ? 'border-blue-600 text-blue-600' 
-                    : 'border-transparent text-gray-800 hover:text-gray-900'
-              }`}
+              onClick={() => setShowHelp(true)}
+              className="flex items-center gap-2 px-3 py-2 text-gray-800 hover:bg-gray-100 rounded-lg border border-gray-400 hover:border-gray-500"
+              title="Ajuda e Legendas"
             >
-              <FileText className="w-4 h-4 inline mr-2" />
-              Templates
-            </button>
-            <button
-              onClick={() => userRole !== 'employee' && setActiveTab('reports')}
-              disabled={userRole === 'employee'}
-              className={`pb-2 px-1 border-b-2 font-medium transition-all ${
-                userRole === 'employee' 
-                  ? 'text-gray-400 cursor-not-allowed' 
-                  : activeTab === 'reports' 
-                    ? 'border-blue-600 text-blue-600' 
-                    : 'border-transparent text-gray-800 hover:text-gray-900'
-              }`}
-            >
-              <FileText className="w-4 h-4 inline mr-2" />
-              Relatórios
-            </button>
-            <button
-              onClick={() => userRole !== 'employee' && setActiveTab('settings')}
-              disabled={userRole === 'employee'}
-              className={`pb-2 px-1 border-b-2 font-medium transition-all ${
-                userRole === 'employee' 
-                  ? 'text-gray-400 cursor-not-allowed' 
-                  : activeTab === 'settings' 
-                    ? 'border-blue-600 text-blue-600' 
-                    : 'border-transparent text-gray-800 hover:text-gray-900'
-              }`}
-            >
-              <Settings className="w-4 h-4 inline mr-2" />
-              Configurações
+              <HelpCircle className="w-4 h-4" />
+              Ajuda
             </button>
           </div>
         </div>
@@ -1381,18 +1707,54 @@ const ScheduleApp = () => {
                 <Filter className="w-5 h-5" />
                 Filtros e Gerenciamento
               </h3>
-              <div className="grid grid-cols-5 gap-4">
-                <div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="relative">
                   <label className="block text-sm font-medium text-gray-900 mb-2">
-                    Colaborador
+                    Nickname
                   </label>
                   <input
                     type="text"
-                    placeholder="Buscar por nome..."
+                    placeholder="Buscar por nick..."
                     value={filters.employee}
-                    onChange={(e) => setFilters(prev => ({ ...prev, employee: e.target.value }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFilters(prev => ({ ...prev, employee: value }));
+                      setShowCalendarSuggestions(value.length > 0);
+                    }}
+                    onFocus={() => setShowCalendarSuggestions(filters.employee.length > 0)}
+                    onBlur={() => setTimeout(() => setShowCalendarSuggestions(false), 200)}
                     className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300 text-sm"
                   />
+
+                  {/* Dropdown de sugestões */}
+                  {showCalendarSuggestions && filters.employee.length > 0 && (
+                    (() => {
+                      const suggestions = employees.filter(emp =>
+                        emp.name.toLowerCase().includes(filters.employee.toLowerCase())
+                      );
+
+                      return suggestions.length > 0 ? (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          {suggestions.map(emp => (
+                            <button
+                              key={emp.id}
+                              type="button"
+                              onClick={() => {
+                                setFilters(prev => ({ ...prev, employee: emp.name }));
+                                setShowCalendarSuggestions(false);
+                              }}
+                              className="w-full px-3 py-2 text-left hover:bg-blue-50 border-b border-gray-200 last:border-b-0"
+                            >
+                              <div className="font-medium text-gray-900">{emp.name}</div>
+                              {emp.team && (
+                                <div className="text-xs text-gray-600">{emp.team}</div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-900 mb-2">
@@ -1403,11 +1765,11 @@ const ScheduleApp = () => {
                     onChange={(e) => setFilters(prev => ({ ...prev, team: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300 text-sm"
                   >
+                    <option value="VAZIO">Nenhuma selecionada</option>
                     <option value="">Todas as equipes</option>
                     {teams.map(team => (
                       <option key={team} value={team}>{team}</option>
                     ))}
-                    <option value="SEM_EQUIPE">Sem equipe</option>
                   </select>
                 </div>
                 <div>
@@ -1426,40 +1788,6 @@ const ScheduleApp = () => {
                     <option value="holiday">⚫ Plantão/Feriado</option>
                   </select>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => setShowLoadModal(true)}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm border border-blue-800"
-                    disabled={userRole === 'employee'}
-                  >
-                    <FolderOpen className="w-4 h-4 inline mr-1" />
-                    Carregar
-                  </button>
-                  {lastSaved && (
-                    <div className="text-xs text-green-800 bg-green-100 px-2 py-1 rounded border border-green-300 text-center">
-                      ✅ Último save: {lastSaved.toLocaleTimeString()}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <button
-                    onClick={() => setShowSaveModal(true)}
-                    disabled={userRole === 'employee' || isSaving}
-                    className="w-full px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm border border-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isSaving ? (
-                      <>
-                        <Archive className="w-4 h-4 inline mr-1" />
-                        Salvando...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4 inline mr-1" />
-                        Salvar Escala
-                      </>
-                    )}
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -1475,12 +1803,21 @@ const ScheduleApp = () => {
                 <h2 className="text-xl font-semibold text-gray-900">
                   {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
                 </h2>
-                <button
-                  onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1))}
-                  className="px-3 py-2 text-gray-800 hover:bg-gray-100 rounded border border-gray-400 font-medium"
-                >
-                  →
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={exportToExcel}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 border border-green-800 font-medium"
+                  >
+                    <Download className="w-4 h-4" />
+                    Exportar
+                  </button>
+                  <button
+                    onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1))}
+                    className="px-3 py-2 text-gray-800 hover:bg-gray-100 rounded border border-gray-400 font-medium"
+                  >
+                    →
+                  </button>
+                </div>
               </div>
 
               <div className="flex gap-6 mb-4 text-sm flex-wrap">
@@ -1951,12 +2288,12 @@ const ScheduleApp = () => {
           </div>
         )}
         
-        {/* People Tab */}
+        {/* Escalas Tab */}
         {activeTab === 'people' && userRole !== 'employee' && (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-300">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-gray-900">Gerenciar Pessoas</h3>
+                <h3 className="font-semibold text-gray-900">Configuração de Escalas</h3>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-4 bg-blue-50 p-3 rounded-lg border border-blue-300">
                     <div className="flex items-center gap-2">
@@ -2009,37 +2346,77 @@ const ScheduleApp = () => {
                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 border border-blue-800 font-medium"
                   >
                     <Plus className="w-4 h-4" />
-                    Adicionar Nova Pessoa
+                    Configurar Escala
                   </button>
                 </div>
               </div>
 
               {/* Filters */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
+                <div className="relative">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Buscar por nome
+                    Buscar por Nick
                   </label>
                   <input
                     type="text"
-                    placeholder="Buscar..."
+                    placeholder="Digite o nick do usuário..."
                     value={personFilters.name}
-                    onChange={(e) => setPersonFilters(prev => ({ ...prev, name: e.target.value }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setPersonFilters(prev => ({ ...prev, name: value }));
+                      setShowNickSuggestions(value.length > 0);
+                    }}
+                    onFocus={() => setShowNickSuggestions(personFilters.name.length > 0)}
+                    onBlur={() => setTimeout(() => setShowNickSuggestions(false), 200)}
                     className="w-full px-3 py-2 border border-gray-400 rounded-lg text-sm"
                   />
+
+                  {/* Dropdown de sugestões */}
+                  {showNickSuggestions && personFilters.name.length > 0 && (
+                    (() => {
+                      const suggestions = employees.filter(emp =>
+                        emp.name.toLowerCase().includes(personFilters.name.toLowerCase())
+                      );
+
+                      return suggestions.length > 0 ? (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          {suggestions.map(emp => (
+                            <button
+                              key={emp.id}
+                              type="button"
+                              onClick={() => {
+                                setPersonFilters(prev => ({ ...prev, name: emp.name }));
+                                setShowNickSuggestions(false);
+                              }}
+                              className="w-full px-3 py-2 text-left hover:bg-blue-50 border-b border-gray-200 last:border-b-0"
+                            >
+                              <div className="font-medium text-gray-900">{emp.name}</div>
+                              {emp.team && (
+                                <div className="text-xs text-gray-600">{emp.team}</div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tipo
+                    Filtrar por Equipe
                   </label>
                   <select
-                    value={personFilters.type}
-                    onChange={(e) => setPersonFilters(prev => ({ ...prev, type: e.target.value }))}
+                    value={personFilters.team || ''}
+                    onChange={(e) => setPersonFilters(prev => ({ ...prev, team: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-400 rounded-lg text-sm"
                   >
-                    <option value="">Todos</option>
-                    <option value="manager">Gestores</option>
-                    <option value="employee">Colaboradores</option>
+                    <option value="VAZIO">Nenhuma selecionada</option>
+                    <option value="">Todas as equipes</option>
+                    {dbTeams.map(team => (
+                      <option key={team.id} value={team.id}>
+                        {team.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -2066,7 +2443,7 @@ const ScheduleApp = () => {
                         className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 border border-blue-800 font-medium"
                       >
                         <Plus className="w-4 h-4" />
-                        Adicionar Pessoa
+                        Configurar Escala
                       </button>
                     </div>
                   </div>
@@ -2133,38 +2510,7 @@ const ScheduleApp = () => {
                                     showConfirm(
                                       '❌ Excluir Pessoa',
                                       `Tem certeza que deseja excluir ${person.name}?`,
-                                      () => {
-                                        setEmployees(prev => prev.filter(emp => emp.id !== person.id));
-                                        
-                                        if (expandedPersonId === person.id) {
-                                          setExpandedPersonId(null);
-                                          setEditingPerson(null);
-                                          setHasUnsavedChanges(false);
-                                        }
-                                        
-                                        setSchedules(prev => {
-                                          const newSchedules = { ...prev };
-                                          delete newSchedules[person.id];
-                                          return newSchedules;
-                                        });
-                                        
-                                        setVacations(prev => {
-                                          const newVacations = { ...prev };
-                                          delete newVacations[person.id];
-                                          return newVacations;
-                                        });
-                                        
-                                        if (selectedPerson && selectedPerson.id === person.id) {
-                                          setSelectedPerson(null);
-                                        }
-                                        
-                                        const change = {
-                                          id: Date.now(),
-                                          timestamp: new Date(),
-                                          action: `❌ Excluiu a pessoa ${person.name}`
-                                        };
-                                        setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
-                                      },
+                                      () => deletePerson(person.id),
                                       'danger'
                                     );
                                   }}
@@ -2941,6 +3287,29 @@ const ScheduleApp = () => {
           </div>
         )}
 
+        {/* Teams Tab */}
+        {activeTab === 'teams' && userRole !== 'employee' && (
+          <TeamsTab
+            teams={dbTeams}
+            onAddTeam={addTeam}
+            onUpdateTeam={updateTeam}
+            onDeleteTeam={deleteTeam}
+            userRole={userRole}
+          />
+        )}
+
+        {/* Users Tab */}
+        {activeTab === 'users' && userRole !== 'employee' && (
+          <UsersTab
+            users={userProfiles}
+            teams={dbTeams}
+            onAddUser={addUserProfile}
+            onUpdateUser={updateUserProfile}
+            onDeleteUser={deleteUserProfile}
+            currentUserRole={userRole}
+          />
+        )}
+
         {/* Modal de Salvamento */}
         {showSaveModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -3061,72 +3430,16 @@ const ScheduleApp = () => {
           </div>
         )}
 
-        {/* Modal de Adicionar Funcionário */}
-        {showAddEmployee && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-md border border-gray-400">
-              <div className="p-6">
-                <h3 className="text-lg font-semibold mb-4 text-gray-900">Adicionar Nova Pessoa</h3>
-                <div className="space-y-3">
-                  <input
-                    type="text"
-                    placeholder="Nome completo"
-                    value={newEmployee.name}
-                    onChange={(e) => setNewEmployee(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-400 rounded-lg"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Equipe"
-                    value={newEmployee.team}
-                    onChange={(e) => setNewEmployee(prev => ({ ...prev, team: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-400 rounded-lg"
-                  />
-                  <select
-                    value={newEmployee.type}
-                    onChange={(e) => setNewEmployee(prev => ({ ...prev, type: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-400 rounded-lg"
-                  >
-                    <option value="variable">Presença Variável</option>
-                    <option value="always_office">Sempre Presencial</option>
-                    <option value="always_home">Sempre Home Office</option>
-                  </select>
-                  <select
-                    value={newEmployee.workingHours}
-                    onChange={(e) => setNewEmployee(prev => ({ ...prev, workingHours: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-400 rounded-lg"
-                  >
-                    {Object.entries(workingHours).map(([key, hours]) => (
-                      <option key={key} value={key}>{hours.label}</option>
-                    ))}
-                  </select>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={newEmployee.isManager}
-                      onChange={(e) => setNewEmployee(prev => ({ ...prev, isManager: e.target.checked }))}
-                    />
-                    <span className="text-sm">Gestor</span>
-                  </label>
-                </div>
-                <div className="flex gap-3 mt-6">
-                  <button
-                    onClick={addEmployee}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 border border-blue-800 font-medium"
-                  >
-                    Adicionar
-                  </button>
-                  <button
-                    onClick={() => setShowAddEmployee(false)}
-                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 border border-gray-500 font-medium"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Modal de Configurar Escala */}
+        <AddEmployeeModal
+          showAddEmployee={showAddEmployee}
+          newEmployee={newEmployee}
+          setNewEmployee={setNewEmployee}
+          setShowAddEmployee={setShowAddEmployee}
+          onAddEmployee={addEmployee}
+          userProfiles={userProfiles}
+          teams={dbTeams}
+        />
 
         {/* Modal de Importação */}
         {showImportModal && (

@@ -297,7 +297,7 @@ const PersonDataTab: React.FC<{
           <div className="border-t pt-4 space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Dias presenciais por semana (orientativo)
+                Dias presenciais por semana
               </label>
               <select
                 value={currentEditData.officeDays || 3}
@@ -319,13 +319,13 @@ const PersonDataTab: React.FC<{
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Dias Preferenciais em Home Office
               </label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <div className="flex flex-wrap gap-3">
                 {[
-                  { key: 'monday', label: 'Segunda' },
-                  { key: 'tuesday', label: 'Terça' },
-                  { key: 'wednesday', label: 'Quarta' },
-                  { key: 'thursday', label: 'Quinta' },
-                  { key: 'friday', label: 'Sexta' }
+                  { key: 'monday', label: 'Segunda-feira' },
+                  { key: 'tuesday', label: 'Terça-feira' },
+                  { key: 'wednesday', label: 'Quarta-feira' },
+                  { key: 'thursday', label: 'Quinta-feira' },
+                  { key: 'friday', label: 'Sexta-feira' }
                 ].map(day => (
                   <label key={day.key} className="flex items-center gap-2">
                     <input
@@ -338,9 +338,9 @@ const PersonDataTab: React.FC<{
                         } else {
                           delete newPreferences[day.key];
                         }
-                        setEditingPerson(prev => ({ 
-                          ...prev!, 
-                          preferences: newPreferences 
+                        setEditingPerson(prev => ({
+                          ...prev!,
+                          preferences: newPreferences
                         }));
                         setHasUnsavedChanges(true);
                       }}
@@ -369,8 +369,12 @@ const PersonDataTab: React.FC<{
             <div className="font-medium">{workingHours[person.workingHours || '9-17']?.label || 'Não definido'}</div>
           </div>
           <div className="bg-gray-50 p-3 rounded-lg">
-            <div className="text-sm text-gray-600">Dias Presencial (Orientativo)</div>
-            <div className="font-medium">{person.officeDays || 0} dias/semana</div>
+            <div className="text-sm text-gray-600">Dias Presencial</div>
+            <div className="font-medium">
+              {person.type === 'always_office' ? '5' :
+               person.type === 'always_home' ? '0' :
+               (person.officeDays || 3)} dias/semana
+            </div>
           </div>
         </div>
         

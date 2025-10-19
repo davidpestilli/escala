@@ -19,6 +19,8 @@ export interface Filters {
 export interface PersonFilters {
   name: string;
   type: string;
+  userRole?: string;
+  team?: string;
 }
 
 export interface VacationData {

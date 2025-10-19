@@ -85,7 +85,7 @@ const PeopleTab = ({
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Tipo
+              Tipo (Funcionário)
             </label>
             <select
               value={personFilters.type}
@@ -93,9 +93,12 @@ const PeopleTab = ({
               className="w-full px-3 py-2 border rounded-lg text-sm"
             >
               <option value="">Todos</option>
-              <option value="manager">Gestores</option>
+              <option value="manager">Gestores de Equipe</option>
               <option value="employee">Colaboradores</option>
             </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Filtra por gestores de equipe (escalas)
+            </p>
           </div>
         </div>
 
