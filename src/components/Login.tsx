@@ -14,17 +14,12 @@ const Login: React.FC = () => {
     setLoading(true);
     setError('');
 
-    console.log('Submetendo formulário:', { email, password });
-
     try {
       const { error } = await signInWithEmail(email, password);
       if (error) {
         setError(error.message || 'Erro no login');
-      } else {
-        console.log('Login realizado com sucesso!');
       }
     } catch (err: any) {
-      console.error('Erro inesperado:', err);
       setError('Erro inesperado. Tente novamente.');
     } finally {
       setLoading(false);

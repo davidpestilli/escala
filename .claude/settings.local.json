@@ -15,7 +15,8 @@
       "Bash(git commit -m \"$(cat <<''EOF''\nSimplifica tela de login\n\n- Remove valor padrão ''teste@teste.com'' do campo email\n- Remove link de cadastro ''Não tem conta? Crie uma aqui''\n- Remove mensagem de teste do sistema\n- Simplifica componente para apenas login (remove signup)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git commit -m \"$(cat <<''EOF''\nRemove botão de mostrar/ocultar senha\n\n- Remove ícone de olho (👁️) do campo de senha\n- Remove funcionalidade de toggle show/hide password\n- Simplifica ainda mais a tela de login\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git add -A)",
-      "Bash(git commit -m \"$(cat <<''EOF''\nCorrige base path do GitHub Pages\n\n- Remove vite.config.js duplicado com configuração incorreta\n- Mantém apenas vite.config.ts com base: ''/escala/''\n- Resolve erro 404 nos assets do GitHub Pages\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"$(cat <<''EOF''\nCorrige base path do GitHub Pages\n\n- Remove vite.config.js duplicado com configuração incorreta\n- Mantém apenas vite.config.ts com base: ''/escala/''\n- Resolve erro 404 nos assets do GitHub Pages\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\nRemove todos os console.log do código\n\n- Remove logs de autenticação (Auth state changed, Login, etc)\n- Remove logs de operações de dados\n- Remove logs de erros\n- Limpa completamente o console em produção\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []

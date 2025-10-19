@@ -116,7 +116,7 @@ export function useOrganizationData() {
         setLastSaved(new Date())
       }
     } catch (error) {
-      console.error('Erro ao carregar dados:', error)
+      // Silenciar erro
     } finally {
       setLoading(false)
     }
@@ -256,9 +256,8 @@ export function useOrganizationData() {
       setLastSaved(new Date())
       return { success: true }
 
-    } catch (error) {
-      console.error('Erro ao salvar:', error)
-      return { success: false, error: error.message }
+    } catch (error: any) {
+      return { success: false, error: error?.message }
     } finally {
       setSaving(false)
     }

@@ -33,7 +33,7 @@ export const useEmployees = () => {
 
       setEmployees(formattedEmployees);
     } catch (error) {
-      console.error('Erro ao carregar funcionários:', error);
+      // Silenciar erro
     } finally {
       setLoading(false);
     }
@@ -74,7 +74,7 @@ export const useEmployees = () => {
       setEmployees(prev => [...prev, newEmployee]);
       return newEmployee;
     } catch (error) {
-      console.error('Erro ao adicionar funcionário:', error);
+      // Silenciar erro
       throw error;
     }
   };
@@ -115,7 +115,7 @@ export const useEmployees = () => {
         } : emp
       ));
     } catch (error) {
-      console.error('Erro ao atualizar funcionário:', error);
+      // Silenciar erro
       throw error;
     }
   };
@@ -134,7 +134,7 @@ export const useEmployees = () => {
 
       setEmployees(prev => prev.filter(emp => emp.id !== id));
     } catch (error) {
-      console.error('Erro ao excluir funcionário:', error);
+      // Silenciar erro
       throw error;
     }
   };
@@ -180,7 +180,7 @@ export const useSchedules = () => {
 
       setSchedules(formattedSchedules);
     } catch (error) {
-      console.error('Erro ao carregar escalas:', error);
+      // Silenciar erro
     } finally {
       setLoading(false);
     }
@@ -209,7 +209,7 @@ export const useSchedules = () => {
         }
       }));
     } catch (error) {
-      console.error('Erro ao definir status do funcionário:', error);
+      // Silenciar erro
       throw error;
     }
   };
@@ -253,7 +253,7 @@ export const useVacations = () => {
 
       setVacations(formattedVacations);
     } catch (error) {
-      console.error('Erro ao carregar férias:', error);
+      // Silenciar erro
     } finally {
       setLoading(false);
     }
@@ -279,7 +279,7 @@ export const useVacations = () => {
         [employeeId]: { start, end }
       }));
     } catch (error) {
-      console.error('Erro ao definir férias:', error);
+      // Silenciar erro
       throw error;
     }
   };
@@ -302,7 +302,7 @@ export const useVacations = () => {
         return newVacations;
       });
     } catch (error) {
-      console.error('Erro ao remover férias:', error);
+      // Silenciar erro
       throw error;
     }
   };
@@ -350,7 +350,7 @@ export const useSystemSettings = () => {
         });
       }
     } catch (error) {
-      console.error('Erro ao carregar configurações:', error);
+      // Silenciar erro
     } finally {
       setLoading(false);
     }
@@ -373,7 +373,7 @@ export const useSystemSettings = () => {
 
       setSettings(newSettings);
     } catch (error) {
-      console.error('Erro ao atualizar configurações:', error);
+      // Silenciar erro
       throw error;
     }
   };
