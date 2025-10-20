@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Users, Download, Filter, Plus, AlertTriangle, Settings, Copy, RotateCcw, FileText, Edit, X, HelpCircle, Trash2, Save, FolderOpen, Archive, Shield, LogOut } from 'lucide-react';
-import { useTeams, useUserProfiles, useEmployees } from '../hooks/useSupabaseData';
+import { useTeams, useUserProfiles, useEmployees, useSchedules } from '../hooks/useSupabaseData';
 import { useAuth } from '../hooks/useAuth';
 import TeamsTab from './tabs/TeamsTab';
 import UsersTab from './tabs/UsersTab';
@@ -14,6 +14,7 @@ const ScheduleApp = () => {
   const { teams: dbTeams, addTeam, updateTeam, deleteTeam } = useTeams();
   const { userProfiles, currentUserProfile, addUserProfile, updateUserProfile, deleteUserProfile } = useUserProfiles();
   const { employees: dbEmployees, addEmployee: addEmployeeDb, updateEmployee: updateEmployeeDb, deleteEmployee: deleteEmployeeDb } = useEmployees();
+  const { schedules: dbSchedules, setEmployeeStatus: setEmployeeStatusDb, clearAllSchedules: clearAllSchedulesDb, refresh: refreshSchedules } = useSchedules();
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [employees, setEmployees] = useState([]);
@@ -139,6 +140,13 @@ const ScheduleApp = () => {
       setEmployees(dbEmployees);
     }
   }, [dbEmployees]);
+
+  // Sincronizar schedules do Supabase com estado local
+  React.useEffect(() => {
+    if (dbSchedules) {
+      setSchedules(dbSchedules);
+    }
+  }, [dbSchedules]);
 
   // Funções para sistema de múltiplos salvamentos
   const saveScheduleToSlot = async (slotId, customName = '') => {
@@ -648,17 +656,24 @@ const ScheduleApp = () => {
   const applyTemplate = (templateKey, specificTeam = null, respectPreferences = false) => {
     const template = templates[templateKey];
     if (!template) return;
-    
+
     if (templateKey === 'manual') {
       setShowManualTemplateModal(true);
       return;
     }
-    
-    const targetEmployees = employees.filter(emp => 
-      emp.type === 'variable' && 
+
+    console.log('=== DEBUG APPLY TEMPLATE ===');
+    console.log('Total de employees:', employees.length);
+    console.log('Employees:', employees);
+
+    const targetEmployees = employees.filter(emp =>
+      emp.type === 'variable' &&
       (!specificTeam || emp.team === specificTeam)
     );
-    
+
+    console.log('Target employees (variáveis):', targetEmployees.length);
+    console.log('Target employees:', targetEmployees);
+
     const affectedCount = targetEmployees.length;
     const alwaysFixedCount = employees.filter(emp => emp.type === 'always_office' || emp.type === 'always_home').length;
     
@@ -690,7 +705,12 @@ const ScheduleApp = () => {
 
   const executeTemplateApplication = (templateKey, targetEmployees, respectPreferences, template) => {
     const days = getDaysInMonth(currentDate).filter(day => day && day.getDay() >= 1 && day.getDay() <= 5);
-    
+
+    console.log('=== EXECUTE TEMPLATE APPLICATION ===');
+    console.log('Template Key:', templateKey);
+    console.log('Target Employees:', targetEmployees.length);
+    console.log('Days to process:', days.length);
+
     if (templateKey === 'manager_rotation') {
       const allManagers = employees.filter(emp => emp.isManager);
       const fixedManagers = allManagers.filter(emp => emp.type === 'always_office');
@@ -761,106 +781,121 @@ const ScheduleApp = () => {
       return;
     }
 
-    // Templates inteligentes com balanceamento
+    // Nova lógica de distribuição equilibrada que respeita o targetOfficeCount
     const balancedApplyTemplate = () => {
+      console.log('=== BALANCED APPLY TEMPLATE ===');
+      console.log('Target per day:', targetOfficeCount);
+      console.log('Target employees for balanced:', targetEmployees.length);
+
       const targetPerDay = targetOfficeCount;
-      const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
-      
-      const daysByWeekday = {};
-      weekdays.forEach(weekday => { daysByWeekday[weekday] = []; });
-      
-      days.forEach(day => {
-        const weekdayIndex = day.getDay() - 1;
-        if (weekdayIndex >= 0 && weekdayIndex < 5) {
-          daysByWeekday[weekdays[weekdayIndex]].push(day);
-        }
+
+      // Determinar quantos dias cada pessoa deve ir ao escritório baseado no template
+      const templatePatterns = {
+        '4x1': { officeDays: 4 },
+        '3x2': { officeDays: 3 },
+        '2x3': { officeDays: 2 },
+        'alternate': { officeDays: 2.5 }
+      };
+
+      const pattern = templatePatterns[templateKey] || { officeDays: 3 };
+
+      // Atribuir número de dias de escritório para cada funcionário
+      const employeeDaysNeeded = targetEmployees.map(emp => ({
+        employee: emp,
+        officeDaysNeeded: pattern.officeDays,
+        daysAssigned: 0
+      }));
+
+      // Objeto para acumular todas as mudanças de escala
+      const newSchedules = {};
+
+      // Inicializar newSchedules com dados limpos para todos os funcionários variáveis
+      targetEmployees.forEach(emp => {
+        newSchedules[emp.id] = {};
       });
 
-      const templatePatterns = {
-        '4x1': { officeDays: 4, homeDays: 1 },
-        '3x2': { officeDays: 3, homeDays: 2 },
-        '2x3': { officeDays: 2, homeDays: 3 },
-        'alternate': { officeDays: 2.5, homeDays: 2.5 }
-      };
-      
-      const pattern = templatePatterns[templateKey] || { officeDays: 3, homeDays: 2 };
-      
-      targetEmployees.forEach((emp, empIndex) => {
-        let personOfficeDays = [];
-        
-        if (respectPreferences && emp.preferences) {
-          const preferredHomeDays = Object.keys(emp.preferences).filter(day => emp.preferences[day] === 'home');
-          const availableDays = weekdays.filter(day => !preferredHomeDays.includes(day));
-          
-          for (let i = 0; i < pattern.officeDays && personOfficeDays.length < pattern.officeDays; i++) {
-            const dayIndex = (empIndex + i) % availableDays.length;
-            if (availableDays[dayIndex]) {
-              personOfficeDays.push(availableDays[dayIndex]);
-            }
+      // Para cada dia, selecionar exatamente targetPerDay pessoas para o escritório
+      days.forEach((day, dayIndex) => {
+        console.log(`\n=== Processing day ${day.toLocaleDateString()} ===`);
+
+        const dateStr = dateToString(day);
+
+        // Contar sempre_office para esse dia
+        const alwaysOfficeCount = employees.filter(emp =>
+          emp.type === 'always_office'
+        ).length;
+
+        console.log(`Always office count: ${alwaysOfficeCount}`);
+        console.log(`Need ${targetPerDay} total, so need ${targetPerDay - alwaysOfficeCount} variable employees`);
+
+        const neededVariable = Math.max(0, targetPerDay - alwaysOfficeCount);
+
+        // Ordenar funcionários por prioridade:
+        // 1. Quem ainda precisa de mais dias no escritório
+        // 2. Quem foi menos ao escritório até agora
+        const sortedEmployees = [...employeeDaysNeeded].sort((a, b) => {
+          const aRemaining = a.officeDaysNeeded - a.daysAssigned;
+          const bRemaining = b.officeDaysNeeded - b.daysAssigned;
+
+          if (aRemaining !== bRemaining) {
+            return bRemaining - aRemaining; // Quem precisa de mais dias primeiro
           }
-          
-          while (personOfficeDays.length < pattern.officeDays) {
-            const dayIndex = (empIndex + personOfficeDays.length) % weekdays.length;
-            if (!personOfficeDays.includes(weekdays[dayIndex])) {
-              personOfficeDays.push(weekdays[dayIndex]);
-            }
+
+          return a.daysAssigned - b.daysAssigned; // Quem foi menos vezes
+        });
+
+        // Selecionar os primeiros neededVariable funcionários para o escritório
+        sortedEmployees.forEach((empData, index) => {
+          if (index < neededVariable) {
+            newSchedules[empData.employee.id][dateStr] = 'office';
+            empData.daysAssigned++;
+            console.log(`  ${empData.employee.name}: OFFICE (${empData.daysAssigned}/${empData.officeDaysNeeded})`);
+          } else {
+            newSchedules[empData.employee.id][dateStr] = 'home';
+            console.log(`  ${empData.employee.name}: HOME`);
           }
-        } else {
-          for (let i = 0; i < pattern.officeDays; i++) {
-            const dayIndex = (empIndex + i) % weekdays.length;
-            personOfficeDays.push(weekdays[dayIndex]);
+        });
+
+        // Verificar contagem final do dia
+        const finalCount = neededVariable + alwaysOfficeCount;
+        console.log(`Final count for ${day.toLocaleDateString()}: ${finalCount} (target: ${targetPerDay})`);
+      });
+
+      console.log('\n=== Final assignment summary ===');
+      employeeDaysNeeded.forEach(empData => {
+        console.log(`${empData.employee.name}: ${empData.daysAssigned} days assigned (target: ${empData.officeDaysNeeded})`);
+      });
+
+      // Aplicar TODAS as mudanças de uma vez só
+      console.log('\n=== Applying all schedules at once ===');
+      setSchedules(prev => {
+        const updated = { ...prev };
+        // Para funcionários variáveis, SUBSTITUIR completamente (não mesclar)
+        Object.keys(newSchedules).forEach(empId => {
+          updated[empId] = newSchedules[empId]; // SUBSTITUIÇÃO COMPLETA
+        });
+        console.log('Schedules updated!');
+        console.log('New schedules:', updated);
+        return updated;
+      });
+
+      // Salvar no Supabase
+      console.log('\n=== Saving schedules to Supabase ===');
+      const savePromises = [];
+      Object.keys(newSchedules).forEach(empId => {
+        Object.keys(newSchedules[empId]).forEach(dateStr => {
+          const status = newSchedules[empId][dateStr];
+          if (status) {
+            savePromises.push(setEmployeeStatusDb(empId, dateStr, status));
           }
-        }
-        
-        weekdays.forEach(weekday => {
-          const isOfficeDay = personOfficeDays.includes(weekday);
-          const daysOfWeek = daysByWeekday[weekday];
-          
-          daysOfWeek.forEach(day => {
-            const status = isOfficeDay ? 'office' : 'home';
-            setEmployeeStatus(emp.id, day, status);
-          });
         });
       });
 
-      days.forEach(day => {
-        const alwaysOfficeCount = employees.filter(emp => 
-          emp.type === 'always_office' && getEmployeeStatus(emp.id, day) === 'office'
-        ).length;
-        
-        const variableInOffice = targetEmployees.filter(emp => 
-          getEmployeeStatus(emp.id, day) === 'office'
-        ).length;
-        
-        const currentOfficeTotal = alwaysOfficeCount + variableInOffice;
-        const neededVariable = Math.max(0, targetPerDay - alwaysOfficeCount);
-        const difference = neededVariable - variableInOffice;
-        
-        if (difference > 0) {
-          const homeEmployees = targetEmployees
-            .filter(emp => getEmployeeStatus(emp.id, day) === 'home')
-            .sort((a, b) => {
-              const aDays = a.officeDays || 3;
-              const bDays = b.officeDays || 3;
-              return bDays - aDays;
-            });
-          
-          for (let i = 0; i < Math.min(difference, homeEmployees.length); i++) {
-            setEmployeeStatus(homeEmployees[i].id, day, 'office');
-          }
-        } else if (difference < 0) {
-          const officeEmployees = targetEmployees
-            .filter(emp => getEmployeeStatus(emp.id, day) === 'office')
-            .sort((a, b) => {
-              const aDays = a.officeDays || 3;
-              const bDays = b.officeDays || 3;
-              return aDays - bDays;
-            });
-          
-          for (let i = 0; i < Math.min(-difference, officeEmployees.length); i++) {
-            setEmployeeStatus(officeEmployees[i].id, day, 'home');
-          }
-        }
+      Promise.all(savePromises).then(() => {
+        console.log('All schedules saved to Supabase!');
+        refreshSchedules(); // Recarregar do banco
+      }).catch(error => {
+        console.error('Error saving schedules to Supabase:', error);
       });
     };
 
@@ -936,6 +971,71 @@ const ScheduleApp = () => {
       '✅ Template Manual Aplicado!',
       `Configuração inicial: ${optionLabels[option]}\n\nAgora clique nos nomes no calendário para fazer ajustes conforme necessário.`,
       'info'
+    );
+  };
+
+  const clearAllSchedules = () => {
+    console.log('=== CLEAR ALL SCHEDULES ===');
+    console.log('Total employees:', employees.length);
+
+    showConfirm(
+      '⚠️ Apagar Todas as Escalas',
+      'Tem certeza que deseja apagar TODAS as escalas de TODOS os usuários?\n\nEsta ação não pode ser desfeita!\n\n⚠️ Todas as configurações de escalas serão removidas.',
+      () => {
+        console.log('User confirmed - clearing schedules...');
+
+        // Obter todos os dias do mês atual
+        const days = getDaysInMonth(currentDate).filter(day => day && day.getDay() >= 1 && day.getDay() <= 5);
+
+        // Limpa todos os schedules de todos os usuários
+        // Define explicitamente null para cada dia para evitar fallback automático
+        const clearedSchedules = {};
+        employees.forEach(emp => {
+          clearedSchedules[emp.id] = {};
+          days.forEach(day => {
+            const dateStr = dateToString(day);
+            clearedSchedules[emp.id][dateStr] = null;
+          });
+          console.log(`Clearing schedule for ${emp.name} (id: ${emp.id}) - ${days.length} days set to null`);
+        });
+
+        console.log('Setting cleared schedules:', clearedSchedules);
+        setSchedules(prev => {
+          console.log('Previous schedules:', prev);
+          console.log('New schedules (cleared):', clearedSchedules);
+          return clearedSchedules;
+        });
+
+        // Limpar do Supabase
+        console.log('\n=== Clearing schedules from Supabase ===');
+        clearAllSchedulesDb().then(() => {
+          console.log('All schedules cleared from Supabase!');
+          refreshSchedules(); // Recarregar do banco
+
+          const change = {
+            id: Date.now(),
+            timestamp: new Date(),
+            action: '🗑️ Apagou TODAS as escalas de todos os usuários'
+          };
+          setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
+
+          console.log('Schedules cleared successfully!');
+
+          showAlert(
+            '✅ Escalas Apagadas!',
+            'Todas as escalas foram removidas com sucesso do banco de dados.',
+            'info'
+          );
+        }).catch(error => {
+          console.error('Error clearing schedules from Supabase:', error);
+          showAlert(
+            '❌ Erro ao Apagar!',
+            'Ocorreu um erro ao apagar as escalas do banco de dados.',
+            'error'
+          );
+        });
+      },
+      'error'
     );
   };
 
@@ -1699,6 +1799,12 @@ const ScheduleApp = () => {
         )}
 
         {/* Calendar Tab */}
+        {activeTab === 'calendar' && (() => {
+          console.log('=== RENDERING CALENDAR ===');
+          console.log('Current schedules state:', schedules);
+          console.log('Total employees:', employees.length);
+          return null;
+        })()}
         {activeTab === 'calendar' && (
           <div className="space-y-6">
             {/* Filtros e Controles de Salvamento */}
@@ -2187,8 +2293,48 @@ const ScheduleApp = () => {
         {activeTab === 'templates' && userRole !== 'employee' && (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-300">
-              <h3 className="font-semibold mb-4 text-gray-900">Templates de Escala</h3>
-              
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-gray-900">Templates de Escala</h3>
+                <div className="flex items-center gap-4 bg-blue-50 p-3 rounded-lg border border-blue-300">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-900 font-medium">Meta presencial:</span>
+                    <input
+                      type="number"
+                      value={targetOfficeCount}
+                      onChange={(e) => setTargetOfficeCount(Number(e.target.value))}
+                      className="w-16 px-2 py-1 border border-gray-400 rounded text-center font-medium"
+                      min="0"
+                    />
+                    <span className="text-sm text-gray-900">pessoas</span>
+                  </div>
+
+                  <div className="flex items-center gap-3 border-l border-blue-400 pl-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="targetMode"
+                        value="absolute"
+                        checked={targetOfficeMode === 'absolute'}
+                        onChange={(e) => setTargetOfficeMode(e.target.value)}
+                        className="text-blue-600"
+                      />
+                      <span className="text-sm font-medium text-blue-900">🎯 Absoluta</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="targetMode"
+                        value="minimum"
+                        checked={targetOfficeMode === 'minimum'}
+                        onChange={(e) => setTargetOfficeMode(e.target.value)}
+                        className="text-blue-600"
+                      />
+                      <span className="text-sm font-medium text-blue-900">📊 Mínima</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <h4 className="font-medium mb-3 text-gray-900">Aplicar Template</h4>
@@ -2281,6 +2427,13 @@ const ScheduleApp = () => {
                       <Edit className="w-4 h-4" />
                       Modo Manual
                     </button>
+                    <button
+                      onClick={clearAllSchedules}
+                      className="w-full flex items-center gap-2 px-3 py-2 bg-red-100 text-red-800 rounded hover:bg-red-200 border border-red-400 font-medium"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Apagar Tudo
+                    </button>
                   </div>
                 </div>
               </div>
@@ -2295,45 +2448,6 @@ const ScheduleApp = () => {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-gray-900">Configuração de Escalas</h3>
                 <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-4 bg-blue-50 p-3 rounded-lg border border-blue-300">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-900 font-medium">Meta presencial:</span>
-                      <input
-                        type="number"
-                        value={targetOfficeCount}
-                        onChange={(e) => setTargetOfficeCount(Number(e.target.value))}
-                        className="w-16 px-2 py-1 border border-gray-400 rounded text-center font-medium"
-                        min="0"
-                      />
-                      <span className="text-sm text-gray-900">pessoas</span>
-                    </div>
-                    
-                    <div className="flex items-center gap-3 border-l border-blue-400 pl-3">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="targetMode"
-                          value="absolute"
-                          checked={targetOfficeMode === 'absolute'}
-                          onChange={(e) => setTargetOfficeMode(e.target.value)}
-                          className="text-blue-600"
-                        />
-                        <span className="text-sm font-medium text-blue-900">🎯 Absoluta</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="targetMode"
-                          value="minimum"
-                          checked={targetOfficeMode === 'minimum'}
-                          onChange={(e) => setTargetOfficeMode(e.target.value)}
-                          className="text-blue-600"
-                        />
-                        <span className="text-sm font-medium text-blue-900">📊 Mínima</span>
-                      </label>
-                    </div>
-                  </div>
-                  
                   <button
                     onClick={() => setShowImportModal(true)}
                     className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 border border-green-800 font-medium"
@@ -2762,9 +2876,12 @@ const ScheduleApp = () => {
                                             <div className="font-medium">{statusLabels[status] || 'Não definido'}</div>
                                           </div>
                                           <div className="bg-gray-50 p-3 rounded-lg border border-gray-300">
-                                            <div className="text-sm text-gray-600">Dias Presencial (Orientativo)</div>
-                                            <div className="font-medium">{person.officeDays || 0} dias/semana</div>
-                                            <div className="text-xs text-gray-500 mt-1">Orientativo</div>
+                                            <div className="text-sm text-gray-600">Dias Presencial</div>
+                                            <div className="font-medium">
+                                              {person.type === 'always_office' ? '5' :
+                                               person.type === 'always_home' ? '0' :
+                                               (person.officeDays || 3)} dias/semana
+                                            </div>
                                           </div>
                                         </div>
                                         

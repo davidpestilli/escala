@@ -268,6 +268,24 @@ export const useSchedules = () => {
     }
   };
 
+  const clearAllSchedules = async () => {
+    if (!user) return;
+
+    try {
+      const { error } = await supabase
+        .from('schedules')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      setSchedules({});
+    } catch (error) {
+      // Silenciar erro
+      throw error;
+    }
+  };
+
   useEffect(() => {
     loadSchedules();
   }, [user]);
@@ -276,6 +294,7 @@ export const useSchedules = () => {
     schedules,
     loading,
     setEmployeeStatus,
+    clearAllSchedules,
     refresh: loadSchedules
   };
 };
