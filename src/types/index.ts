@@ -17,6 +17,7 @@ export interface Employee {
   preferences: Record<string, string>;
   officeDays: number;
   workingHours: WorkingHours;
+  homeOfficeDays?: string[]; // Array de datas em formato 'YYYY-MM-DD'
 }
 
 // Schedule and vacation types

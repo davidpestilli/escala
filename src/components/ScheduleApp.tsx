@@ -1001,20 +1001,29 @@ const ScheduleApp = () => {
 
     const days = getDaysInMonth(currentDate).filter(day => day && day.getDay() >= 1 && day.getDay() <= 5);
 
-    // Filtrar apenas variable que não estão excluídas
+    // Separar funcionários por tipo e condição
+    const alwaysOfficeEmps = employees.filter(emp => emp.type === 'always_office');
+    const alwaysHomeEmps = employees.filter(emp => emp.type === 'always_home');
+
+    // Variable com escala manual definida (homeOfficeDays não vazio)
+    const variableWithManualSchedule = employees.filter(
+      emp => emp.type === 'variable' && emp.homeOfficeDays && emp.homeOfficeDays.length > 0
+    );
+
+    // Variable disponíveis para distribuição automática
     const availableForDistribution = employees.filter(
       emp =>
         emp.type === 'variable' &&
-        !config.excludedEmployeeIds.includes(emp.id)
+        !config.excludedEmployeeIds.includes(emp.id) &&
+        (!emp.homeOfficeDays || emp.homeOfficeDays.length === 0) // Sem escala manual
     );
 
+    console.log('Always Office:', alwaysOfficeEmps.length);
+    console.log('Always Home:', alwaysHomeEmps.length);
+    console.log('Variable with manual schedule:', variableWithManualSchedule.length);
     console.log('Available for distribution:', availableForDistribution.length);
     console.log('Office days per person:', config.officeDays);
     console.log('Target per day:', config.targetPerDay);
-
-    // Separar funcionários por tipo
-    const alwaysOfficeEmps = employees.filter(emp => emp.type === 'always_office');
-    const alwaysHomeEmps = employees.filter(emp => emp.type === 'always_home');
 
     // Preparar dados para rastrear atribuições
     const employeeDaysNeeded = availableForDistribution.map(emp => ({
@@ -1034,21 +1043,36 @@ const ScheduleApp = () => {
     days.forEach((day, dayIndex) => {
       const dateStr = dateToString(day);
 
-      // 1. Sempre presenciais (always_office)
+      // PASSO 1: Aplicar always_office
       alwaysOfficeEmps.forEach(emp => {
         newSchedules[emp.id][dateStr] = 'office';
       });
 
-      // 2. Sempre home (always_home)
+      // PASSO 2: Aplicar always_home
       alwaysHomeEmps.forEach(emp => {
         newSchedules[emp.id][dateStr] = 'home';
       });
 
-      // 3. Distribuir variable
-      if (availableForDistribution.length > 0) {
-        const neededVariable = Math.max(0, config.targetPerDay - alwaysOfficeEmps.length);
+      // PASSO 3: Aplicar escalas manuais (variable com homeOfficeDays definido)
+      let manualOfficeCount = 0;
+      variableWithManualSchedule.forEach(emp => {
+        if (emp.homeOfficeDays?.includes(dateStr)) {
+          newSchedules[emp.id][dateStr] = 'home';
+        } else {
+          newSchedules[emp.id][dateStr] = 'office';
+          manualOfficeCount++;
+        }
+      });
 
-        // Ordenar por prioridade
+      // PASSO 4: Calcular vagas restantes
+      const occupiedSlots = alwaysOfficeEmps.length + manualOfficeCount;
+      const remainingSlots = Math.max(0, config.targetPerDay - occupiedSlots);
+
+      console.log(`Day ${dateStr}: always_office=${alwaysOfficeEmps.length}, manualOffice=${manualOfficeCount}, target=${config.targetPerDay}, remaining=${remainingSlots}`);
+
+      // PASSO 5: Distribuir apenas nas vagas restantes
+      if (availableForDistribution.length > 0 && remainingSlots > 0) {
+        // Ordenar por prioridade (quem ainda precisa mais dias presenciais)
         const sortedVariable = [...employeeDaysNeeded].sort((a, b) => {
           const aRemaining = a.officeDaysNeeded - a.daysAssigned;
           const bRemaining = b.officeDaysNeeded - b.daysAssigned;
@@ -1060,14 +1084,19 @@ const ScheduleApp = () => {
           return a.daysAssigned - b.daysAssigned;
         });
 
-        // Selecionar para escritório
+        // Selecionar apenas até preencher as vagas restantes
         sortedVariable.forEach((empData, index) => {
-          if (index < neededVariable) {
+          if (index < remainingSlots) {
             newSchedules[empData.employee.id][dateStr] = 'office';
             empData.daysAssigned++;
           } else {
             newSchedules[empData.employee.id][dateStr] = 'home';
           }
+        });
+      } else if (availableForDistribution.length > 0) {
+        // Se não há vagas restantes, todos ficam em home
+        availableForDistribution.forEach(emp => {
+          newSchedules[emp.id][dateStr] = 'home';
         });
       }
     });
@@ -1083,6 +1112,20 @@ const ScheduleApp = () => {
       console.log('Schedules updated!');
       return updated;
     });
+
+    // Atualizar homeOfficeDays no estado employees
+    setEmployees(prev => prev.map(emp => {
+      if (!availableForDistribution.find(e => e.id === emp.id)) {
+        return emp; // Não alterar quem já tem escala manual
+      }
+
+      // Para quem foi distribuído automaticamente, preencher homeOfficeDays
+      const homeDays = Object.keys(newSchedules[emp.id] || {}).filter(
+        dateStr => newSchedules[emp.id][dateStr] === 'home'
+      );
+
+      return { ...emp, homeOfficeDays: homeDays };
+    }));
 
     // Salvar no Supabase
     console.log('\n=== Saving schedules to Supabase ===');
@@ -1104,13 +1147,13 @@ const ScheduleApp = () => {
         const change = {
           id: Date.now(),
           timestamp: new Date(),
-          action: `✨ Aplicou distribuição customizada: ${config.officeDays} dias presenciais, meta de ${config.targetPerDay} pessoas/dia`
+          action: `✨ Aplicou distribuição customizada: ${config.officeDays} dias presenciais, meta de ${config.targetPerDay} pessoas/dia (${variableWithManualSchedule.length} com escala manual preservada)`
         };
         setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
 
         showAlert(
           '✅ Distribuição Aplicada!',
-          `Escalas foram distribuídas com sucesso:\n\n• Dias presenciais: ${config.officeDays}\n• Meta presencial: ${config.targetPerDay} pessoas/dia\n• Pessoas na distribuição: ${availableForDistribution.length}`,
+          `Escalas foram distribuídas com sucesso:\n\n• Dias presenciais: ${config.officeDays}\n• Meta presencial: ${config.targetPerDay} pessoas/dia\n• Pessoas distribuídas: ${availableForDistribution.length}\n• Escalas manuais preservadas: ${variableWithManualSchedule.length}`,
           'success'
         );
       })
@@ -1130,7 +1173,7 @@ const ScheduleApp = () => {
 
     showConfirm(
       '⚠️ Apagar TODOS os Dados de Escala',
-      'Tem certeza que deseja apagar TODOS os dados?\n\nEsta ação irá remover:\n• Escalas (schedules)\n• Férias (vacations)\n• Feriados (holidays)\n• Plantões de fim de semana (weekend shifts)\n\nEsta ação NÃO pode ser desfeita!',
+      'Tem certeza que deseja apagar TODOS os dados?\n\nEsta ação irá remover:\n• Escalas (schedules)\n• Escalas manuais (homeOfficeDays dos cards)\n• Férias (vacations)\n• Feriados (holidays)\n• Plantões de fim de semana (weekend shifts)\n\nEsta ação NÃO pode ser desfeita!',
       () => {
         console.log('User confirmed - clearing all schedule data...');
 
@@ -1141,6 +1184,12 @@ const ScheduleApp = () => {
         setHolidayStaff({});
         setWeekendShifts({});
         setWeekendStaff({});
+
+        // Limpar homeOfficeDays de todos os employees
+        setEmployees(prev => prev.map(emp => ({
+          ...emp,
+          homeOfficeDays: []
+        })));
 
         // Limpar do Supabase em paralelo
         console.log('\n=== Clearing all data from Supabase ===');
@@ -1158,7 +1207,7 @@ const ScheduleApp = () => {
             const change = {
               id: Date.now(),
               timestamp: new Date(),
-              action: '🗑️ Apagou TODOS os dados de escala (escalas, férias, feriados e plantões)'
+              action: '🗑️ Apagou TODOS os dados de escala (escalas, escalas manuais, férias, feriados e plantões)'
             };
             setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
 
@@ -1166,7 +1215,7 @@ const ScheduleApp = () => {
 
             showAlert(
               '✅ Todos os Dados Apagados!',
-              'Escalas, férias, feriados e plantões foram removidos com sucesso.\n\nO calendário está limpo e pronto para novos dados.',
+              'Escalas, escalas manuais, férias, feriados e plantões foram removidos com sucesso.\n\nO calendário e os cards estão limpos e prontos para novos dados.',
               'info'
             );
           })
@@ -2752,8 +2801,30 @@ const ScheduleApp = () => {
                                           <select
                                             value={currentEditData.type}
                                             onChange={(e) => {
-                                              setEditingPerson(prev => ({ ...(prev || person), type: e.target.value }));
-                                              setHasUnsavedChanges(true);
+                                              const newType = e.target.value;
+                                              const oldType = currentEditData.type;
+
+                                              // Se mudar de 'variable' para outro tipo E tiver homeOfficeDays, perguntar
+                                              if (oldType === 'variable' && newType !== 'variable' &&
+                                                  currentEditData.homeOfficeDays && currentEditData.homeOfficeDays.length > 0) {
+                                                showConfirm(
+                                                  '⚠️ Limpar Escala Manual?',
+                                                  `Esta pessoa possui ${currentEditData.homeOfficeDays.length} dias de escala manual definidos.\n\nAo mudar para "${newType === 'always_office' ? 'Sempre Presencial' : 'Sempre Home Office'}", a escala manual será removida.\n\nDeseja continuar?`,
+                                                  () => {
+                                                    setEditingPerson(prev => ({
+                                                      ...(prev || person),
+                                                      type: newType,
+                                                      homeOfficeDays: [] // Limpar escala manual
+                                                    }));
+                                                    setHasUnsavedChanges(true);
+                                                  },
+                                                  'warning'
+                                                );
+                                              } else {
+                                                // Mudar tipo normalmente
+                                                setEditingPerson(prev => ({ ...(prev || person), type: newType }));
+                                                setHasUnsavedChanges(true);
+                                              }
                                             }}
                                             className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300"
                                           >
@@ -2994,20 +3065,25 @@ const ScheduleApp = () => {
                                                   }));
                                                 }
                                               });
-                                              
+
                                               setSchedules(prev => {
                                                 const newSchedules = { ...prev };
                                                 delete newSchedules[person.id];
                                                 return newSchedules;
                                               });
-                                              
+
+                                              // Limpar homeOfficeDays também
+                                              setEmployees(prev => prev.map(emp =>
+                                                emp.id === person.id ? { ...emp, homeOfficeDays: [] } : emp
+                                              ));
+
                                               const change = {
                                                 id: Date.now(),
                                                 timestamp: new Date(),
                                                 action: `Limpou TODAS as configurações manuais de ${person.name}`
                                               };
                                               setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
-                                              
+
                                               showAlert(
                                                 '✅ Configurações Limpas',
                                                 `Todas as configurações manuais de ${person.name} foram removidas!\n\nAgora ela seguirá apenas o regime de trabalho: ${employeeTypes[person.type]}`,
@@ -3024,15 +3100,124 @@ const ScheduleApp = () => {
                                       </button>
                                     </div>
 
-                                    {/* Informações Adicionais */}
-                                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-300">
-                                      <div className="text-sm text-gray-600 mb-2">📋 Informações da Escala</div>
-                                      <div className="text-sm text-gray-700">
-                                        Para visualizar e editar a escala detalhada desta pessoa, 
-                                        utilize o <strong>calendário principal</strong> na aba "Calendário".
-                                        Lá você pode clicar nos nomes para alternar entre presencial e home office.
+                                    {/* Mini-Calendário de Escala Manual (apenas para type === 'variable') */}
+                                    {person.type === 'variable' && (
+                                      <div className="bg-blue-50 p-4 rounded-lg border border-blue-300">
+                                        <div className="flex items-center justify-between mb-3">
+                                          <div className="text-sm font-medium text-blue-900">
+                                            📅 Escala Manual do Mês ({monthNames[currentDate.getMonth()]} {currentDate.getFullYear()})
+                                          </div>
+                                          <div className="text-xs text-blue-700">
+                                            Clique nos dias para marcar Home Office (🔵)
+                                          </div>
+                                        </div>
+
+                                        {/* Mini-calendário */}
+                                        <div className="bg-white rounded-lg p-3 border border-blue-200">
+                                          <div className="grid grid-cols-7 gap-1 mb-2">
+                                            {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
+                                              <div key={day} className="text-center text-xs font-medium text-gray-600 p-1">
+                                                {day}
+                                              </div>
+                                            ))}
+                                          </div>
+
+                                          <div className="grid grid-cols-7 gap-1">
+                                            {getDaysInMonth(currentDate).map((day, index) => {
+                                              if (!day) {
+                                                return <div key={index} className="p-2"></div>;
+                                              }
+
+                                              const dateStr = dateToString(day);
+                                              const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                                              const isHomeOffice = person.homeOfficeDays?.includes(dateStr);
+                                              const isToday = new Date().toDateString() === day.toDateString();
+
+                                              return (
+                                                <button
+                                                  key={index}
+                                                  onClick={() => {
+                                                    if (isWeekend) return; // Não permitir clicar em fins de semana
+
+                                                    setEmployees(prev => prev.map(emp => {
+                                                      if (emp.id !== person.id) return emp;
+
+                                                      const currentDays = emp.homeOfficeDays || [];
+                                                      const newDays = currentDays.includes(dateStr)
+                                                        ? currentDays.filter(d => d !== dateStr)
+                                                        : [...currentDays, dateStr];
+
+                                                      // Salvar no Supabase
+                                                      const status = newDays.includes(dateStr) ? 'home' : 'office';
+                                                      setEmployeeStatusDb(emp.id, day, status);
+
+                                                      return { ...emp, homeOfficeDays: newDays };
+                                                    }));
+
+                                                    setHasUnsavedChanges(true);
+                                                  }}
+                                                  disabled={isWeekend}
+                                                  className={`
+                                                    p-2 text-xs rounded transition-all
+                                                    ${isWeekend
+                                                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                      : isHomeOffice
+                                                        ? 'bg-blue-500 text-white font-semibold hover:bg-blue-600 shadow'
+                                                        : 'bg-white border border-gray-300 hover:bg-gray-50'
+                                                    }
+                                                    ${isToday && !isWeekend ? 'ring-2 ring-yellow-400' : ''}
+                                                  `}
+                                                  title={
+                                                    isWeekend
+                                                      ? 'Fim de semana'
+                                                      : isHomeOffice
+                                                        ? 'Home Office - Clique para alternar'
+                                                        : 'Presencial - Clique para marcar Home Office'
+                                                  }
+                                                >
+                                                  <div>{day.getDate()}</div>
+                                                  {!isWeekend && isHomeOffice && (
+                                                    <div className="text-xs">🔵</div>
+                                                  )}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+
+                                        {/* Legenda */}
+                                        <div className="flex items-center justify-between mt-3 text-xs text-gray-600">
+                                          <div className="flex items-center gap-3">
+                                            <div className="flex items-center gap-1">
+                                              <div className="w-4 h-4 bg-white border border-gray-300 rounded"></div>
+                                              <span>Presencial</span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                              <div className="w-4 h-4 bg-blue-500 rounded"></div>
+                                              <span>Home Office</span>
+                                            </div>
+                                          </div>
+                                          <div className="text-blue-700 font-medium">
+                                            {person.homeOfficeDays?.filter(dateStr => {
+                                              const date = new Date(dateStr);
+                                              return date.getMonth() === currentDate.getMonth() &&
+                                                     date.getFullYear() === currentDate.getFullYear();
+                                            }).length || 0} dias de home office marcados
+                                          </div>
+                                        </div>
                                       </div>
-                                    </div>
+                                    )}
+
+                                    {/* Mensagem para always_office e always_home */}
+                                    {person.type !== 'variable' && (
+                                      <div className="bg-gray-50 p-4 rounded-lg border border-gray-300">
+                                        <div className="text-sm text-gray-600 mb-2">📋 Regime de Trabalho Fixo</div>
+                                        <div className="text-sm text-gray-700">
+                                          Esta pessoa possui regime <strong>{employeeTypes[person.type]}</strong>.
+                                          Para alterar, modifique o campo "Regime de Trabalho" na aba Dados Básicos.
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
