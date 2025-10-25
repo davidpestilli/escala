@@ -417,14 +417,40 @@ const ScheduleApp = () => {
       }
     }
 
-    // Retornar escala preenchida (se existir, caso contrário nada)
+    // Retornar escala preenchida (se existir)
     if (schedules[employeeId] && schedules[employeeId][dateStr]) {
       return schedules[employeeId][dateStr];
     }
 
-    // ❌ REMOVIDO: Fallback para status padrão por tipo
-    // Agora retorna null se não houver escala preenchida
-    return null;
+    // Fallback para status padrão por tipo de employee
+    const employee = employees.find(emp => emp.id === employeeId);
+    if (!employee) return null;
+
+    switch (employee.type) {
+      case 'always_office':
+        return 'office';  // 🟢 Sempre presencial
+      case 'always_home':
+        return 'home';    // 🔵 Sempre home office
+      case 'variable':
+        // Se tem homeOfficeDays definido, usar essa informação
+        if (employee.homeOfficeDays && employee.homeOfficeDays.includes(dateStr)) {
+          return 'home';
+        }
+        // Se não tem homeOfficeDays para este dia, assumir presencial por padrão
+        // (a menos que seja fim de semana)
+        const dayOfWeek = date.getDay();
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+          return null; // Fim de semana
+        }
+        // Se é dia útil e não está marcado como home em homeOfficeDays, é presencial
+        if (employee.homeOfficeDays && employee.homeOfficeDays.length > 0) {
+          return 'office';
+        }
+        // Se não tem nenhum homeOfficeDays definido, retorna null (sem escala)
+        return null;
+      default:
+        return null;
+    }
   };
 
   // Função auxiliar para determinar status automático de funcionários com Presença Variável
@@ -1827,20 +1853,29 @@ const ScheduleApp = () => {
       `}</style>
       
       <div className="max-w-7xl mx-auto">
-        {/* Header Superior - Título, Usuário e Sair */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-4 border border-gray-300">
+        {/* Header Superior - Moderno e Profissional */}
+        <div style={{background: 'linear-gradient(to right, #2563eb, #4f46e5)'}} className="rounded-xl shadow-xl p-6 mb-6">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Calendar className="w-8 h-8 text-blue-600" />
-              <h1 className="text-xl font-semibold text-gray-900">Sistema de Escalas de Teletrabalho</h1>
+            <div className="flex items-center gap-4">
+              <div style={{backgroundColor: '#3b82f6'}} className="p-3 rounded-xl shadow-lg">
+                <Calendar style={{color: 'white', width: '32px', height: '32px'}} />
+              </div>
+              <div>
+                <h1 style={{color: 'white', fontSize: '30px', fontWeight: 'bold'}}>
+                  Sistema de Escalas
+                </h1>
+                <p style={{color: '#dbeafe', fontSize: '14px', marginTop: '4px'}}>
+                  Gestão inteligente de teletrabalho
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-2 border border-gray-400">
-                <Shield className="w-4 h-4 text-gray-600" />
+            <div className="flex items-center gap-3">
+              <div style={{backgroundColor: '#3b82f6'}} className="flex items-center gap-2 rounded-lg px-4 py-3 shadow-md">
+                <Shield style={{color: 'white', width: '20px', height: '20px'}} />
                 <div className="text-sm">
-                  <span className="font-medium text-gray-900">{userNick}</span>
-                  <span className="text-gray-600 ml-2">
+                  <span style={{color: 'white', fontWeight: '600'}}>{userNick}</span>
+                  <span style={{color: '#dbeafe'}} className="ml-2">
                     {userRole === 'admin' && '👑 Admin'}
                     {userRole === 'manager' && '👨‍💼 Gerente'}
                     {userRole === 'employee' && '👤 Colaborador'}
@@ -1850,125 +1885,130 @@ const ScheduleApp = () => {
 
               <button
                 onClick={signOut}
-                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 border border-red-800 font-medium"
+                style={{backgroundColor: '#dc2626', color: 'white'}}
+                className="flex items-center gap-2 px-4 py-3 rounded-lg hover:bg-red-700 shadow-md font-semibold transition-all"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut style={{width: '20px', height: '20px'}} />
                 Sair
               </button>
             </div>
           </div>
         </div>
 
-        {/* Container de Navegação */}
-        <div className="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-300">
+        {/* Container de Navegação - Design Moderno */}
+        <div className="bg-white rounded-xl shadow-md p-2 mb-6 border border-gray-200">
           <div className="flex items-center justify-between">
-            {/* Tabs */}
-            <div className="flex gap-4">
+            {/* Tabs com design pill/badge moderno */}
+            <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => setActiveTab('calendar')}
-                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
-                  activeTab === 'calendar'
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-800 hover:text-gray-900'
-                }`}
+                style={activeTab === 'calendar' ? {
+                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
+                  color: 'white',
+                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
+                  transform: 'scale(1.05)'
+                } : {
+                  color: '#374151'
+                }}
+                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
               >
-                <Calendar className="w-4 h-4 inline mr-2" />
-                Calendário
+                <Calendar className="w-4 h-4" />
+                <span>Calendário</span>
               </button>
               <button
                 onClick={() => userRole !== 'employee' && setActiveTab('people')}
                 disabled={userRole === 'employee'}
-                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
-                  userRole === 'employee'
-                    ? 'text-gray-400 cursor-not-allowed'
-                    : activeTab === 'people'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-800 hover:text-gray-900'
-                }`}
+                style={userRole === 'employee' ? {color: '#9ca3af', opacity: 0.5, cursor: 'not-allowed'} : activeTab === 'people' ? {
+                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
+                  color: 'white',
+                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
+                  transform: 'scale(1.05)'
+                } : {color: '#374151'}}
+                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
               >
-                <Users className="w-4 h-4 inline mr-2" />
-                Escalas
+                <Users className="w-4 h-4" />
+                <span>Escalas</span>
               </button>
               <button
                 onClick={() => userRole !== 'employee' && setActiveTab('auto')}
                 disabled={userRole === 'employee'}
-                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
-                  userRole === 'employee'
-                    ? 'text-gray-400 cursor-not-allowed'
-                    : activeTab === 'auto'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-800 hover:text-gray-900'
-                }`}
+                style={userRole === 'employee' ? {color: '#9ca3af', opacity: 0.5, cursor: 'not-allowed'} : activeTab === 'auto' ? {
+                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
+                  color: 'white',
+                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
+                  transform: 'scale(1.05)'
+                } : {color: '#374151'}}
+                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
               >
-                <FileText className="w-4 h-4 inline mr-2" />
-                Auto
+                <FileText className="w-4 h-4" />
+                <span>Auto</span>
               </button>
               <button
                 onClick={() => userRole !== 'employee' && setActiveTab('reports')}
                 disabled={userRole === 'employee'}
-                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
-                  userRole === 'employee'
-                    ? 'text-gray-400 cursor-not-allowed'
-                    : activeTab === 'reports'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-800 hover:text-gray-900'
-                }`}
+                style={userRole === 'employee' ? {color: '#9ca3af', opacity: 0.5, cursor: 'not-allowed'} : activeTab === 'reports' ? {
+                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
+                  color: 'white',
+                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
+                  transform: 'scale(1.05)'
+                } : {color: '#374151'}}
+                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
               >
-                <FileText className="w-4 h-4 inline mr-2" />
-                Relatórios
+                <FileText className="w-4 h-4" />
+                <span>Relatórios</span>
               </button>
               <button
                 onClick={() => userRole !== 'employee' && setActiveTab('settings')}
                 disabled={userRole === 'employee'}
-                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
-                  userRole === 'employee'
-                    ? 'text-gray-400 cursor-not-allowed'
-                    : activeTab === 'settings'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-800 hover:text-gray-900'
-                }`}
+                style={userRole === 'employee' ? {color: '#9ca3af', opacity: 0.5, cursor: 'not-allowed'} : activeTab === 'settings' ? {
+                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
+                  color: 'white',
+                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
+                  transform: 'scale(1.05)'
+                } : {color: '#374151'}}
+                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
               >
-                <Settings className="w-4 h-4 inline mr-2" />
-                Configurações
+                <Settings className="w-4 h-4" />
+                <span>Configurações</span>
               </button>
               <button
                 onClick={() => userRole !== 'employee' && setActiveTab('teams')}
                 disabled={userRole === 'employee'}
-                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
-                  userRole === 'employee'
-                    ? 'text-gray-400 cursor-not-allowed'
-                    : activeTab === 'teams'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-800 hover:text-gray-900'
-                }`}
+                style={userRole === 'employee' ? {color: '#9ca3af', opacity: 0.5, cursor: 'not-allowed'} : activeTab === 'teams' ? {
+                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
+                  color: 'white',
+                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
+                  transform: 'scale(1.05)'
+                } : {color: '#374151'}}
+                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
               >
-                <Users className="w-4 h-4 inline mr-2" />
-                Equipes
+                <Users className="w-4 h-4" />
+                <span>Equipes</span>
               </button>
               <button
                 onClick={() => userRole !== 'employee' && setActiveTab('users')}
                 disabled={userRole === 'employee'}
-                className={`pb-2 px-1 border-b-2 font-medium transition-all ${
-                  userRole === 'employee'
-                    ? 'text-gray-400 cursor-not-allowed'
-                    : activeTab === 'users'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-800 hover:text-gray-900'
-                }`}
+                style={userRole === 'employee' ? {color: '#9ca3af', opacity: 0.5, cursor: 'not-allowed'} : activeTab === 'users' ? {
+                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
+                  color: 'white',
+                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
+                  transform: 'scale(1.05)'
+                } : {color: '#374151'}}
+                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
               >
-                <Shield className="w-4 h-4 inline mr-2" />
-                Usuários
+                <Shield className="w-4 h-4" />
+                <span>Usuários</span>
               </button>
             </div>
 
-            {/* Botão de Ajuda */}
+            {/* Botão de Ajuda - Modernizado */}
             <button
               onClick={() => setShowHelp(true)}
-              className="flex items-center gap-2 px-3 py-2 text-gray-800 hover:bg-gray-100 rounded-lg border border-gray-400 hover:border-gray-500"
+              className="flex items-center gap-2 px-4 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg font-medium transition-all"
               title="Ajuda e Legendas"
             >
               <HelpCircle className="w-4 h-4" />
-              Ajuda
+              <span>Ajuda</span>
             </button>
           </div>
         </div>
@@ -2865,79 +2905,11 @@ const ScheduleApp = () => {
                                           />
                                           <span className="text-sm">Gestor</span>
                                         </label>
-
-                                        {/* Configurações para Presença Variável */}
-                                        {currentEditData.type === 'variable' && (
-                                          <div className="border-t border-gray-300 pt-4 space-y-4">
-                                            <div>
-                                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                Dias presenciais por semana (orientativo)
-                                              </label>
-                                              <select
-                                                value={currentEditData.officeDays || 3}
-                                                onChange={(e) => {
-                                                  setEditingPerson(prev => ({ ...(prev || person), officeDays: Number(e.target.value) }));
-                                                  setHasUnsavedChanges(true);
-                                                }}
-                                                className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300"
-                                              >
-                                                <option value={1}>1 dia</option>
-                                                <option value={2}>2 dias</option>
-                                                <option value={3}>3 dias</option>
-                                                <option value={4}>4 dias</option>
-                                                <option value={5}>5 dias</option>
-                                              </select>
-                                              <div className="text-xs text-gray-500 mt-1">
-                                                💡 Orientativo apenas
-                                              </div>
-                                            </div>
-
-                                            <div>
-                                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                Dias Preferenciais em Home Office
-                                              </label>
-                                              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                                {[
-                                                  { key: 'monday', label: 'Segunda' },
-                                                  { key: 'tuesday', label: 'Terça' },
-                                                  { key: 'wednesday', label: 'Quarta' },
-                                                  { key: 'thursday', label: 'Quinta' },
-                                                  { key: 'friday', label: 'Sexta' }
-                                                ].map(day => (
-                                                  <label key={day.key} className="flex items-center gap-2">
-                                                    <input
-                                                      type="checkbox"
-                                                      checked={(currentEditData.preferences || {})[day.key] === 'home'}
-                                                      onChange={(e) => {
-                                                        const newPreferences = { ...(currentEditData.preferences || {}) };
-                                                        if (e.target.checked) {
-                                                          newPreferences[day.key] = 'home';
-                                                        } else {
-                                                          delete newPreferences[day.key];
-                                                        }
-                                                        setEditingPerson(prev => ({ 
-                                                          ...(prev || person), 
-                                                          preferences: newPreferences 
-                                                        }));
-                                                        setHasUnsavedChanges(true);
-                                                      }}
-                                                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                                    />
-                                                    <span className="text-sm">{day.label}</span>
-                                                  </label>
-                                                ))}
-                                              </div>
-                                              <div className="text-xs text-gray-500 mt-2">
-                                                Preferências de dias para home office
-                                              </div>
-                                            </div>
-                                          </div>
-                                        )}
                                       </>
                                     ) : (
                                       /* Modo Visualização */
                                       <>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                           <div className="bg-gray-50 p-3 rounded-lg border border-gray-300">
                                             <div className="text-sm text-gray-600">Regime de Trabalho</div>
                                             <div className="font-medium">{employeeTypes[person.type]}</div>
@@ -2950,28 +2922,7 @@ const ScheduleApp = () => {
                                             <div className="text-sm text-gray-600">Status Atual</div>
                                             <div className="font-medium">{statusLabels[status] || 'Não definido'}</div>
                                           </div>
-                                          <div className="bg-gray-50 p-3 rounded-lg border border-gray-300">
-                                            <div className="text-sm text-gray-600">Dias Presencial</div>
-                                            <div className="font-medium">
-                                              {person.type === 'always_office' ? '5' :
-                                               person.type === 'always_home' ? '0' :
-                                               (person.officeDays || 3)} dias/semana
-                                            </div>
-                                          </div>
                                         </div>
-                                        
-                                        {person.type === 'variable' && person.preferences && Object.keys(person.preferences).length > 0 && (
-                                          <div className="bg-blue-50 p-3 rounded-lg border border-blue-300">
-                                            <div className="text-sm text-gray-600 mb-2">Preferências de Home Office</div>
-                                            <div className="flex flex-wrap gap-2">
-                                              {Object.keys(person.preferences).map(day => (
-                                                <span key={day} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded border border-blue-400">
-                                                  {day === 'monday' ? 'Segunda' : day === 'tuesday' ? 'Terça' : day === 'wednesday' ? 'Quarta' : day === 'thursday' ? 'Quinta' : 'Sexta'}
-                                                </span>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        )}
                                         
                                         <div className="pt-3">
                                           <button

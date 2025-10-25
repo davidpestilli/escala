@@ -273,6 +273,8 @@ export const useSchedules = () => {
           employee_id: employeeId,
           date: date,
           status: status
+        }, {
+          onConflict: 'organization_id,employee_id,date'
         });
 
       if (error) throw error;
