@@ -215,15 +215,28 @@ export const useSchedules = () => {
 
   const loadSchedules = async () => {
     if (!user) return;
-    
+
     try {
+      // Buscar organização do usuário
+      const { data: orgData } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('owner_id', user.id)
+        .single();
+
+      if (!orgData) {
+        setSchedules({});
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('schedules')
         .select('*')
-        .eq('user_id', user.id);
+        .eq('organization_id', orgData.id);
 
       if (error) throw error;
-      
+
       const formattedSchedules: Record<string, Record<string, string>> = {};
       data?.forEach(schedule => {
         if (!formattedSchedules[schedule.employee_id]) {
@@ -244,13 +257,22 @@ export const useSchedules = () => {
     if (!user) return;
 
     try {
+      // Buscar organização do usuário
+      const { data: orgData } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('owner_id', user.id)
+        .single();
+
+      if (!orgData) throw new Error('Organization not found');
+
       const { error } = await supabase
         .from('schedules')
         .upsert({
+          organization_id: orgData.id,
           employee_id: employeeId,
           date: date,
-          status: status,
-          user_id: user.id
+          status: status
         });
 
       if (error) throw error;
@@ -272,10 +294,19 @@ export const useSchedules = () => {
     if (!user) return;
 
     try {
+      // Buscar organização do usuário
+      const { data: orgData } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('owner_id', user.id)
+        .single();
+
+      if (!orgData) throw new Error('Organization not found');
+
       const { error } = await supabase
         .from('schedules')
         .delete()
-        .eq('user_id', user.id);
+        .eq('organization_id', orgData.id);
 
       if (error) throw error;
 
@@ -307,15 +338,28 @@ export const useVacations = () => {
 
   const loadVacations = async () => {
     if (!user) return;
-    
+
     try {
+      // Buscar organização do usuário
+      const { data: orgData } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('owner_id', user.id)
+        .single();
+
+      if (!orgData) {
+        setVacations({});
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('vacations')
         .select('*')
-        .eq('user_id', user.id);
+        .eq('organization_id', orgData.id);
 
       if (error) throw error;
-      
+
       const formattedVacations: Record<string, { start: string; end: string }> = {};
       data?.forEach(vacation => {
         formattedVacations[vacation.employee_id] = {
@@ -336,13 +380,22 @@ export const useVacations = () => {
     if (!user) return;
 
     try {
+      // Buscar organização do usuário
+      const { data: orgData } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('owner_id', user.id)
+        .single();
+
+      if (!orgData) throw new Error('Organization not found');
+
       const { error } = await supabase
         .from('vacations')
         .upsert({
+          organization_id: orgData.id,
           employee_id: employeeId,
           start_date: start,
-          end_date: end,
-          user_id: user.id
+          end_date: end
         });
 
       if (error) throw error;
@@ -361,11 +414,20 @@ export const useVacations = () => {
     if (!user) return;
 
     try {
+      // Buscar organização do usuário
+      const { data: orgData } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('owner_id', user.id)
+        .single();
+
+      if (!orgData) throw new Error('Organization not found');
+
       const { error } = await supabase
         .from('vacations')
         .delete()
         .eq('employee_id', employeeId)
-        .eq('user_id', user.id);
+        .eq('organization_id', orgData.id);
 
       if (error) throw error;
 
@@ -405,21 +467,33 @@ export const useSystemSettings = () => {
 
   const loadSettings = async () => {
     if (!user) return;
-    
+
     try {
+      // Buscar organização do usuário
+      const { data: orgData } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('owner_id', user.id)
+        .single();
+
+      if (!orgData) {
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('system_settings')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('organization_id', orgData.id)
         .single();
 
       if (error && error.code !== 'PGRST116') throw error;
-      
+
       if (data) {
         setSettings({
-          maxCapacity: data.max_capacity,
-          targetOfficeCount: data.target_office_count,
-          targetOfficeMode: data.target_office_mode
+          maxCapacity: data.value?.maxCapacity || 10,
+          targetOfficeCount: data.value?.targetOfficeCount || 6,
+          targetOfficeMode: data.value?.targetOfficeMode || 'absolute'
         });
       }
     } catch (error) {
@@ -433,13 +507,25 @@ export const useSystemSettings = () => {
     if (!user) return;
 
     try {
+      // Buscar organização do usuário
+      const { data: orgData } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('owner_id', user.id)
+        .single();
+
+      if (!orgData) throw new Error('Organization not found');
+
       const { error } = await supabase
         .from('system_settings')
         .upsert({
-          max_capacity: newSettings.maxCapacity,
-          target_office_count: newSettings.targetOfficeCount,
-          target_office_mode: newSettings.targetOfficeMode,
-          user_id: user.id
+          organization_id: orgData.id,
+          key: 'app_settings',
+          value: {
+            maxCapacity: newSettings.maxCapacity,
+            targetOfficeCount: newSettings.targetOfficeCount,
+            targetOfficeMode: newSettings.targetOfficeMode
+          }
         });
 
       if (error) throw error;
