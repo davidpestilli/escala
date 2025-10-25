@@ -1,6 +1,6 @@
 // src/components/tabs/AutoTab.tsx
 import React, { useState, useMemo } from 'react';
-import { Trash2, Check, X } from 'lucide-react';
+import { Trash2, Check, X, ChevronDown } from 'lucide-react';
 import { Employee } from '../../types';
 
 interface AutoTabProps {
@@ -35,6 +35,8 @@ const AutoTab: React.FC<AutoTabProps> = ({
   });
 
   const [showResumo, setShowResumo] = useState(false);
+  const [isPersonListOpen, setIsPersonListOpen] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
 
   if (userRole === 'employee') {
     return null;
@@ -82,18 +84,27 @@ const AutoTab: React.FC<AutoTabProps> = ({
     setShowResumo(true);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    setIsApplying(true);
+
+    // Chamar a função de distribuição
     onApplyCustomDistribution({
       officeDays: distributionConfig.officeDays!,
       targetPerDay: distributionConfig.targetPerDay!,
       excludedEmployeeIds: distributionConfig.excludedEmployeeIds
     });
-    setShowResumo(false);
-    setDistributionConfig({
-      officeDays: null,
-      targetPerDay: null,
-      excludedEmployeeIds: []
-    });
+
+    // Aguardar um tempo para as operações de Supabase serem concluídas
+    // (a função onApplyCustomDistribution é assíncrona mas não retorna Promise)
+    setTimeout(() => {
+      setIsApplying(false);
+      setShowResumo(false);
+      setDistributionConfig({
+        officeDays: null,
+        targetPerDay: null,
+        excludedEmployeeIds: []
+      });
+    }, 2000);
   };
 
   const handleCancel = () => {
@@ -142,52 +153,73 @@ const AutoTab: React.FC<AutoTabProps> = ({
         </div>
       </div>
 
-      {/* ===== SELEÇÃO DE PESSOAS ===== */}
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <span>🎯</span> Pessoas Disponíveis para Distribuição
-        </h3>
+      {/* ===== SELEÇÃO DE PESSOAS (CASCATA) ===== */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        {/* Header Colapsável */}
+        <button
+          onClick={() => setIsPersonListOpen(!isPersonListOpen)}
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition border-b border-gray-200"
+        >
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <span>🎯</span> Pessoas Disponíveis para Distribuição
+          </h3>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-gray-600 bg-blue-100 text-blue-800 px-3 py-1 rounded-full">
+              {includedCount} incluídas
+            </span>
+            <ChevronDown
+              className={`w-5 h-5 text-gray-600 transition-transform duration-300 ${
+                isPersonListOpen ? 'rotate-180' : ''
+              }`}
+            />
+          </div>
+        </button>
 
-        <div className="border border-gray-200 rounded-lg p-4 max-h-64 overflow-y-auto">
-          {availableEmployees.length === 0 ? (
-            <p className="text-gray-500 text-sm">
-              Nenhuma pessoa disponível para distribuição (sem people variável)
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {availableEmployees.map(emp => {
-                const isExcluded = distributionConfig.excludedEmployeeIds.includes(emp.id);
-                return (
-                  <div
-                    key={emp.id}
-                    className="flex items-center justify-between p-3 rounded border border-gray-200 hover:bg-gray-50 transition"
-                  >
-                    <span className={isExcluded ? 'text-gray-400 line-through' : 'text-gray-900'}>
-                      {emp.name}
-                    </span>
-                    <button
-                      onClick={() => toggleExcludePerson(emp.id)}
-                      className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition ${
-                        isExcluded
-                          ? 'bg-red-100 border-red-500'
-                          : 'bg-white border-green-500 hover:bg-green-50'
-                      }`}
-                      title={isExcluded ? 'Incluir nesta pessoa' : 'Excluir esta pessoa da distribuição'}
-                    >
-                      {isExcluded && <X className="w-4 h-4 text-red-600" />}
-                      {!isExcluded && <Check className="w-4 h-4 text-green-600 opacity-0 group-hover:opacity-100" />}
-                    </button>
-                  </div>
-                );
-              })}
+        {/* Conteúdo Colapsável */}
+        {isPersonListOpen && (
+          <div className="p-6 border-t border-gray-200 bg-gray-50">
+            <div className="border border-gray-200 rounded-lg p-4 max-h-64 overflow-y-auto bg-white">
+              {availableEmployees.length === 0 ? (
+                <p className="text-gray-500 text-sm">
+                  Nenhuma pessoa disponível para distribuição (sem people variável)
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {availableEmployees.map(emp => {
+                    const isExcluded = distributionConfig.excludedEmployeeIds.includes(emp.id);
+                    return (
+                      <div
+                        key={emp.id}
+                        className="flex items-center justify-between p-3 rounded border border-gray-200 hover:bg-gray-50 transition"
+                      >
+                        <span className={isExcluded ? 'text-gray-400 line-through' : 'text-gray-900'}>
+                          {emp.name}
+                        </span>
+                        <button
+                          onClick={() => toggleExcludePerson(emp.id)}
+                          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition ${
+                            isExcluded
+                              ? 'bg-red-100 border-red-500'
+                              : 'bg-white border-green-500 hover:bg-green-50'
+                          }`}
+                          title={isExcluded ? 'Incluir nesta pessoa' : 'Excluir esta pessoa da distribuição'}
+                        >
+                          {isExcluded && <X className="w-4 h-4 text-red-600" />}
+                          {!isExcluded && <Check className="w-4 h-4 text-green-600 opacity-0 group-hover:opacity-100" />}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        <p className="text-xs text-gray-600 mt-3 flex items-center gap-1">
-          <span>💡</span> Clique no checkbox para excluir/incluir uma pessoa. Os cards acima são atualizados
-          automaticamente.
-        </p>
+            <p className="text-xs text-gray-600 mt-3 flex items-center gap-1">
+              <span>💡</span> Clique no checkbox para excluir/incluir uma pessoa. Os cards acima são atualizados
+              automaticamente.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ===== CONFIGURAÇÃO DE DISTRIBUIÇÃO ===== */}
@@ -349,6 +381,48 @@ const AutoTab: React.FC<AutoTabProps> = ({
           🗑️ Apagar Todas as Escalas
         </button>
       </div>
+
+      {/* ===== MODAL DE LOADING ===== */}
+      {isApplying && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full mx-4 text-center animate-fade-in">
+            {/* Spinner */}
+            <div className="flex justify-center mb-6">
+              <div className="relative w-16 h-16">
+                <div className="absolute inset-0 rounded-full border-4 border-gray-200"></div>
+                <div className="absolute inset-0 rounded-full border-4 border-blue-600 border-t-blue-600 animate-spin"></div>
+              </div>
+            </div>
+
+            {/* Texto */}
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Distribuindo Escalas...</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Processando distribuição equilibrada e salvando no banco de dados
+            </p>
+
+            {/* Linhas de progresso animadas */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1 bg-gray-200 rounded overflow-hidden">
+                  <div className="h-full bg-blue-600 animate-pulse" style={{ width: '33%' }}></div>
+                </div>
+                <span className="text-xs text-gray-500">Calculando...</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1 bg-gray-200 rounded overflow-hidden">
+                  <div className="h-full bg-green-600 animate-pulse" style={{ width: '66%' }}></div>
+                </div>
+                <span className="text-xs text-gray-500">Salvando...</span>
+              </div>
+            </div>
+
+            {/* Mensagem de dica */}
+            <p className="text-xs text-gray-400 mt-6">
+              Por favor aguarde, você será notificado quando a operação terminar...
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
