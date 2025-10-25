@@ -3139,20 +3139,40 @@ const ScheduleApp = () => {
                                                   onClick={() => {
                                                     if (isWeekend) return; // Não permitir clicar em fins de semana
 
+                                                    const currentDays = person.homeOfficeDays || [];
+                                                    const isCurrentlyHome = currentDays.includes(dateStr);
+                                                    const newStatus = isCurrentlyHome ? 'office' : 'home';
+
+                                                    // 1. Atualizar homeOfficeDays no employee
                                                     setEmployees(prev => prev.map(emp => {
                                                       if (emp.id !== person.id) return emp;
 
-                                                      const currentDays = emp.homeOfficeDays || [];
-                                                      const newDays = currentDays.includes(dateStr)
+                                                      const newDays = isCurrentlyHome
                                                         ? currentDays.filter(d => d !== dateStr)
                                                         : [...currentDays, dateStr];
 
-                                                      // Salvar no Supabase
-                                                      const status = newDays.includes(dateStr) ? 'home' : 'office';
-                                                      setEmployeeStatusDb(emp.id, day, status);
-
                                                       return { ...emp, homeOfficeDays: newDays };
                                                     }));
+
+                                                    // 2. Atualizar schedules para que o Calendário veja
+                                                    setSchedules(prev => ({
+                                                      ...prev,
+                                                      [person.id]: {
+                                                        ...prev[person.id],
+                                                        [dateStr]: newStatus
+                                                      }
+                                                    }));
+
+                                                    // 3. Salvar no Supabase
+                                                    setEmployeeStatusDb(person.id, day, newStatus);
+
+                                                    // 4. Adicionar ao histórico de mudanças
+                                                    const change = {
+                                                      id: Date.now(),
+                                                      timestamp: new Date(),
+                                                      action: `Marcou ${person.name} em ${day.toLocaleDateString()} como ${newStatus === 'home' ? 'Home Office' : 'Presencial'} (escala manual)`
+                                                    };
+                                                    setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
 
                                                     setHasUnsavedChanges(true);
                                                   }}
