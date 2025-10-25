@@ -8,7 +8,7 @@ import { AddEmployeeModal } from './modals/AddEmployeeModal';
 
 const ScheduleApp = () => {
   // Hooks para autenticação
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
 
   // Hooks para equipes e perfis de usuário
   const { teams: dbTeams, addTeam, updateTeam, deleteTeam } = useTeams();
@@ -777,7 +777,20 @@ const ScheduleApp = () => {
 
       const targetPerDay = targetOfficeCount;
 
-      // Determinar quantos dias cada pessoa deve ir ao escritório baseado no template
+      // SEPARAR FUNCIONÁRIOS POR TIPO
+      const alwaysOfficeEmps = targetEmployees.filter(emp => emp.type === 'always_office');
+      const alwaysHomeEmps = targetEmployees.filter(emp => emp.type === 'always_home');
+      const variableEmps = targetEmployees.filter(emp => emp.type === 'variable');
+
+      console.log(`\nFuncionários:`);
+      console.log(`  Always Office: ${alwaysOfficeEmps.length}`);
+      console.log(`  Always Home: ${alwaysHomeEmps.length}`);
+      console.log(`  Variable: ${variableEmps.length}`);
+      console.log(`  Meta presencial por dia: ${targetPerDay}`);
+      console.log(`  Presenciais fixos (always_office): ${alwaysOfficeEmps.length}`);
+      console.log(`  Presenciais a distribuir entre variable: ${Math.max(0, targetPerDay - alwaysOfficeEmps.length)}`);
+
+      // Determinar quantos dias cada VARIABLE deve ir ao escritório
       const templatePatterns = {
         '4x1': { officeDays: 4 },
         '3x2': { officeDays: 3 },
@@ -787,8 +800,8 @@ const ScheduleApp = () => {
 
       const pattern = templatePatterns[templateKey] || { officeDays: 3 };
 
-      // Atribuir número de dias de escritório para cada funcionário
-      const employeeDaysNeeded = targetEmployees.map(emp => ({
+      // Atribuir número de dias de escritório para APENAS os variable
+      const employeeDaysNeeded = variableEmps.map(emp => ({
         employee: emp,
         officeDaysNeeded: pattern.officeDays,
         daysAssigned: 0
@@ -797,59 +810,72 @@ const ScheduleApp = () => {
       // Objeto para acumular todas as mudanças de escala
       const newSchedules = {};
 
-      // Inicializar newSchedules com dados limpos para todos os funcionários variáveis
+      // Inicializar newSchedules para TODOS os funcionários
       targetEmployees.forEach(emp => {
         newSchedules[emp.id] = {};
       });
 
-      // Para cada dia, selecionar exatamente targetPerDay pessoas para o escritório
+      // Para cada dia, aplicar regras corretas
       days.forEach((day, dayIndex) => {
         console.log(`\n=== Processing day ${day.toLocaleDateString()} ===`);
 
         const dateStr = dateToString(day);
 
-        // Contar sempre_office para esse dia
-        const alwaysOfficeCount = employees.filter(emp =>
-          emp.type === 'always_office'
-        ).length;
+        const neededVariable = Math.max(0, targetPerDay - alwaysOfficeEmps.length);
 
-        console.log(`Always office count: ${alwaysOfficeCount}`);
-        console.log(`Need ${targetPerDay} total, so need ${targetPerDay - alwaysOfficeCount} variable employees`);
+        console.log(`  Always office: ${alwaysOfficeEmps.length}, Need variable: ${neededVariable}`);
 
-        const neededVariable = Math.max(0, targetPerDay - alwaysOfficeCount);
-
-        // Ordenar funcionários por prioridade:
-        // 1. Quem ainda precisa de mais dias no escritório
-        // 2. Quem foi menos ao escritório até agora
-        const sortedEmployees = [...employeeDaysNeeded].sort((a, b) => {
-          const aRemaining = a.officeDaysNeeded - a.daysAssigned;
-          const bRemaining = b.officeDaysNeeded - b.daysAssigned;
-
-          if (aRemaining !== bRemaining) {
-            return bRemaining - aRemaining; // Quem precisa de mais dias primeiro
-          }
-
-          return a.daysAssigned - b.daysAssigned; // Quem foi menos vezes
+        // 1. MARCAR ALWAYS_OFFICE como "office" (nunca muda)
+        alwaysOfficeEmps.forEach(emp => {
+          newSchedules[emp.id][dateStr] = 'office';
         });
 
-        // Selecionar os primeiros neededVariable funcionários para o escritório
-        sortedEmployees.forEach((empData, index) => {
-          if (index < neededVariable) {
-            newSchedules[empData.employee.id][dateStr] = 'office';
-            empData.daysAssigned++;
-            console.log(`  ${empData.employee.name}: OFFICE (${empData.daysAssigned}/${empData.officeDaysNeeded})`);
-          } else {
-            newSchedules[empData.employee.id][dateStr] = 'home';
-            console.log(`  ${empData.employee.name}: HOME`);
-          }
+        // 2. MARCAR ALWAYS_HOME como "home" (nunca muda)
+        alwaysHomeEmps.forEach(emp => {
+          newSchedules[emp.id][dateStr] = 'home';
         });
+
+        // 3. DISTRIBUIR VARIABLE equilibradamente
+        if (variableEmps.length > 0) {
+          // Ordenar variable por prioridade:
+          // 1. Quem ainda precisa de mais dias no escritório
+          // 2. Quem foi menos ao escritório até agora
+          const sortedVariable = [...employeeDaysNeeded].sort((a, b) => {
+            const aRemaining = a.officeDaysNeeded - a.daysAssigned;
+            const bRemaining = b.officeDaysNeeded - b.daysAssigned;
+
+            if (aRemaining !== bRemaining) {
+              return bRemaining - aRemaining; // Quem precisa de mais dias primeiro
+            }
+
+            return a.daysAssigned - b.daysAssigned; // Quem foi menos vezes
+          });
+
+          // Selecionar os primeiros neededVariable para o escritório
+          sortedVariable.forEach((empData, index) => {
+            if (index < neededVariable) {
+              newSchedules[empData.employee.id][dateStr] = 'office';
+              empData.daysAssigned++;
+              console.log(`  ${empData.employee.name}: OFFICE (${empData.daysAssigned}/${empData.officeDaysNeeded})`);
+            } else {
+              newSchedules[empData.employee.id][dateStr] = 'home';
+              console.log(`  ${empData.employee.name}: HOME`);
+            }
+          });
+        }
 
         // Verificar contagem final do dia
-        const finalCount = neededVariable + alwaysOfficeCount;
+        const finalCount = alwaysOfficeEmps.length + neededVariable;
         console.log(`Final count for ${day.toLocaleDateString()}: ${finalCount} (target: ${targetPerDay})`);
       });
 
       console.log('\n=== Final assignment summary ===');
+      alwaysOfficeEmps.forEach(emp => {
+        console.log(`${emp.name}: ALWAYS OFFICE (fixo todos os dias)`);
+      });
+      alwaysHomeEmps.forEach(emp => {
+        console.log(`${emp.name}: ALWAYS HOME (fixo todos os dias)`);
+      });
       employeeDaysNeeded.forEach(empData => {
         console.log(`${empData.employee.name}: ${empData.daysAssigned} days assigned (target: ${empData.officeDaysNeeded})`);
       });
@@ -982,7 +1008,6 @@ const ScheduleApp = () => {
 
         // Limpar do Supabase em paralelo
         console.log('\n=== Clearing all data from Supabase ===');
-        const { user } = useAuth();
 
         Promise.all([
           clearAllSchedulesDb(),
