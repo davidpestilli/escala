@@ -1,20 +1,30 @@
-Ao tentar apagar, houve este erro
+As regras existentes para distribuição permanecem as mesmas. O que vamos alterar é o layout possibilitar a criação de uma distribuição customizada em vez de usar uma template. 
 
-❌ Erro ao Apagar!
-Ocorreu um erro ao apagar as escalas do banco de dados.
-
-@supabase_supabase-js.js?v=116a3faf:4230  DELETE https://rdkvvigjmowtvhxqlrnp.supabase.co/rest/v1/schedules?user_id=eq.2c467a78-f3ee-43ca-86d0-59a79999010d 400 (Bad Request)
-(anonymous) @ @supabase_supabase-js.js?v=116a3faf:4230
-(anonymous) @ @supabase_supabase-js.js?v=116a3faf:4251
-fulfilled @ @supabase_supabase-js.js?v=116a3faf:4203
-Promise.then
-step @ @supabase_supabase-js.js?v=116a3faf:4216
-(anonymous) @ @supabase_supabase-js.js?v=116a3faf:4218
-__awaiter6 @ @supabase_supabase-js.js?v=116a3faf:4200
-(anonymous) @ @supabase_supabase-js.js?v=116a3faf:4241
-then @ @supabase_supabase-js.js?v=116a3faf:90Understand this error
-ScheduleApp.tsx:1030 Error clearing schedules from Supabase: {code: '42703', details: null, hint: null, message: 'column schedules.user_id does not exist'}
+1. Renomear aba Template para Auto
+2. Card com informação de quantas pessoas há registradas
+3. Card com a informação de quantas pessoas estão disponíveis para distribuição (não estarão disponíveis usuários com always_office ou always_home, futuramente também acrescentaremos a opção de que pessoas de férias fiquem fora da distribuição.
+4. Card com cascata com os nomes de todas as pessoas disponíveis para distribuição e com um radial button ao lado que, se marcado, significa que se optou por deixar aquela pessoa de fora da distribuição. Ao se marcar esse radial, as informações para distribuição serão atualizadas imediatamente por meio de silent update.
+5. Criar sistema custom para distribuição com as seguintes características
+	a. Caixa seletora (1 a 5) para quantidade de dias presenciais
+	b. Caixa seletora para quantidade de pessoas presenciais todos os dias
+	c. Botão Aplicar fica visível após preenchimento da das caixas anteriores
+	d. Após clicar em Aplicar, aparece um resumo do que foi selecionado e como será feita a distribuição. Aparece também o botão Confirmar que executa a distribuição.
+6. Botão Apagar Escalas no final da página, com destaque, que aplica a função atual de apagar toda a escala.
+7. Sugira um layout moderno, intuitivo e profissional para essas mudanças.
+8. Informe se entendeu tudo antes de começar a aplicar as mudanças.
 
 
-Verifique se a tabela que está a ser chamado existe na arquitetura do sistema. Há diversos arquivos sql na raiz que contém a arquitetura. Verifique outros problemas caso não seja um problema de existência de tabela no banco
+Respostas
 
+  1. Radio buttons (não checkboxes) para incluir/excluir pessoas?
+São checkboxes redondos. Além disso, todas as pessoas estão incluídas por padrão. O checkbox é para excluir aquela pessoa da distribuição.
+  2. A exclusão de pessoas recomputa Card 2 automaticamente sem botão?
+Sim
+  3. O resumo mostra como a distribuição será feita (método equilibrado)?
+Sim
+  4. Meta presencial máxima é o número de pessoas disponíveis?
+Não, meta presencial é a quantidade exata de pessoas que estarão presencialmente todos os dias. É o número de vagas que há para serem distribuídas. É a mesma coisa que o campo "Meta Presencial" com os check para Absoluto e Mínimo. A diferença é que vamos retirar os checkboxes e subentender que o número selecionado é absoluto, ou seja, é a quatidade de pessoas que devemos ter todos os dias.
+  5. Layout é responsivo (mobile-friendly)?
+Sim
+
+Informe se tudo ficou claro.

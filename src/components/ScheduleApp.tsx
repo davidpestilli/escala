@@ -4,6 +4,7 @@ import { useTeams, useUserProfiles, useEmployees, useSchedules, clearAllVacation
 import { useAuth } from '../hooks/useAuth';
 import TeamsTab from './tabs/TeamsTab';
 import UsersTab from './tabs/UsersTab';
+import AutoTab from './tabs/AutoTab';
 import { AddEmployeeModal } from './modals/AddEmployeeModal';
 
 const ScheduleApp = () => {
@@ -988,6 +989,141 @@ const ScheduleApp = () => {
     );
   };
 
+  // ===== APLICAR DISTRIBUIÇÃO CUSTOMIZADA (ABA AUTO) =====
+  const applyCustomDistribution = (config: {
+    officeDays: number;
+    targetPerDay: number;
+    excludedEmployeeIds: number[];
+  }) => {
+    console.log('=== APPLY CUSTOM DISTRIBUTION ===');
+    console.log('Config:', config);
+    console.log('All employees:', employees.length);
+
+    const days = getDaysInMonth(currentDate).filter(day => day && day.getDay() >= 1 && day.getDay() <= 5);
+
+    // Filtrar apenas variable que não estão excluídas
+    const availableForDistribution = employees.filter(
+      emp =>
+        emp.type === 'variable' &&
+        !config.excludedEmployeeIds.includes(emp.id)
+    );
+
+    console.log('Available for distribution:', availableForDistribution.length);
+    console.log('Office days per person:', config.officeDays);
+    console.log('Target per day:', config.targetPerDay);
+
+    // Separar funcionários por tipo
+    const alwaysOfficeEmps = employees.filter(emp => emp.type === 'always_office');
+    const alwaysHomeEmps = employees.filter(emp => emp.type === 'always_home');
+
+    // Preparar dados para rastrear atribuições
+    const employeeDaysNeeded = availableForDistribution.map(emp => ({
+      employee: emp,
+      officeDaysNeeded: config.officeDays,
+      daysAssigned: 0
+    }));
+
+    const newSchedules: any = {};
+
+    // Inicializar escalas para TODOS
+    employees.forEach(emp => {
+      newSchedules[emp.id] = {};
+    });
+
+    // Processar cada dia
+    days.forEach((day, dayIndex) => {
+      const dateStr = dateToString(day);
+
+      // 1. Sempre presenciais (always_office)
+      alwaysOfficeEmps.forEach(emp => {
+        newSchedules[emp.id][dateStr] = 'office';
+      });
+
+      // 2. Sempre home (always_home)
+      alwaysHomeEmps.forEach(emp => {
+        newSchedules[emp.id][dateStr] = 'home';
+      });
+
+      // 3. Distribuir variable
+      if (availableForDistribution.length > 0) {
+        const neededVariable = Math.max(0, config.targetPerDay - alwaysOfficeEmps.length);
+
+        // Ordenar por prioridade
+        const sortedVariable = [...employeeDaysNeeded].sort((a, b) => {
+          const aRemaining = a.officeDaysNeeded - a.daysAssigned;
+          const bRemaining = b.officeDaysNeeded - b.daysAssigned;
+
+          if (aRemaining !== bRemaining) {
+            return bRemaining - aRemaining;
+          }
+
+          return a.daysAssigned - b.daysAssigned;
+        });
+
+        // Selecionar para escritório
+        sortedVariable.forEach((empData, index) => {
+          if (index < neededVariable) {
+            newSchedules[empData.employee.id][dateStr] = 'office';
+            empData.daysAssigned++;
+          } else {
+            newSchedules[empData.employee.id][dateStr] = 'home';
+          }
+        });
+      }
+    });
+
+    console.log('New schedules prepared:', newSchedules);
+
+    // Aplicar ao estado local
+    setSchedules(prev => {
+      const updated: any = { ...prev };
+      Object.keys(newSchedules).forEach(empId => {
+        updated[empId] = newSchedules[empId];
+      });
+      console.log('Schedules updated!');
+      return updated;
+    });
+
+    // Salvar no Supabase
+    console.log('\n=== Saving schedules to Supabase ===');
+    const savePromises = [];
+    Object.keys(newSchedules).forEach(empId => {
+      Object.keys(newSchedules[empId]).forEach(dateStr => {
+        const status = newSchedules[empId][dateStr];
+        if (status) {
+          savePromises.push(setEmployeeStatusDb(empId, dateStr, status));
+        }
+      });
+    });
+
+    Promise.all(savePromises)
+      .then(() => {
+        console.log('All schedules saved to Supabase!');
+        refreshSchedules();
+
+        const change = {
+          id: Date.now(),
+          timestamp: new Date(),
+          action: `✨ Aplicou distribuição customizada: ${config.officeDays} dias presenciais, meta de ${config.targetPerDay} pessoas/dia`
+        };
+        setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
+
+        showAlert(
+          '✅ Distribuição Aplicada!',
+          `Escalas foram distribuídas com sucesso:\n\n• Dias presenciais: ${config.officeDays}\n• Meta presencial: ${config.targetPerDay} pessoas/dia\n• Pessoas na distribuição: ${availableForDistribution.length}`,
+          'success'
+        );
+      })
+      .catch(error => {
+        console.error('Error saving schedules to Supabase:', error);
+        showAlert(
+          '❌ Erro!',
+          'Ocorreu um erro ao salvar as escalas.',
+          'error'
+        );
+      });
+  };
+
   const clearAllSchedules = () => {
     console.log('=== CLEAR ALL DATA ===');
     console.log('Total employees:', employees.length);
@@ -1705,18 +1841,18 @@ const ScheduleApp = () => {
                 Escalas
               </button>
               <button
-                onClick={() => userRole !== 'employee' && setActiveTab('templates')}
+                onClick={() => userRole !== 'employee' && setActiveTab('auto')}
                 disabled={userRole === 'employee'}
                 className={`pb-2 px-1 border-b-2 font-medium transition-all ${
                   userRole === 'employee'
                     ? 'text-gray-400 cursor-not-allowed'
-                    : activeTab === 'templates'
+                    : activeTab === 'auto'
                       ? 'border-blue-600 text-blue-600'
                       : 'border-transparent text-gray-800 hover:text-gray-900'
                 }`}
               >
                 <FileText className="w-4 h-4 inline mr-2" />
-                Templates
+                Auto
               </button>
               <button
                 onClick={() => userRole !== 'employee' && setActiveTab('reports')}
@@ -2298,155 +2434,15 @@ const ScheduleApp = () => {
         )}
 
         {/* Templates Tab */}
-        {activeTab === 'templates' && userRole !== 'employee' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-300">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-gray-900">Templates de Escala</h3>
-                <div className="flex items-center gap-4 bg-blue-50 p-3 rounded-lg border border-blue-300">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-900 font-medium">Meta presencial:</span>
-                    <input
-                      type="number"
-                      value={targetOfficeCount}
-                      onChange={(e) => setTargetOfficeCount(Number(e.target.value))}
-                      className="w-16 px-2 py-1 border border-gray-400 rounded text-center font-medium"
-                      min="0"
-                    />
-                    <span className="text-sm text-gray-900">pessoas</span>
-                  </div>
-
-                  <div className="flex items-center gap-3 border-l border-blue-400 pl-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="targetMode"
-                        value="absolute"
-                        checked={targetOfficeMode === 'absolute'}
-                        onChange={(e) => setTargetOfficeMode(e.target.value)}
-                        className="text-blue-600"
-                      />
-                      <span className="text-sm font-medium text-blue-900">🎯 Absoluta</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="targetMode"
-                        value="minimum"
-                        checked={targetOfficeMode === 'minimum'}
-                        onChange={(e) => setTargetOfficeMode(e.target.value)}
-                        className="text-blue-600"
-                      />
-                      <span className="text-sm font-medium text-blue-900">📊 Mínima</span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h4 className="font-medium mb-3 text-gray-900">Aplicar Template</h4>
-                  <div className="space-y-3 border border-gray-400 rounded-lg p-4">
-                    {Object.entries(templates).map(([key, template]) => (
-                      <div key={key} className="border border-gray-300 rounded-lg p-4 shadow-md bg-white">
-                        <div className="flex items-center justify-between mb-2">
-                          <h5 className="font-medium text-gray-900">{template.name}</h5>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => applyTemplate(key, null, false)}
-                              className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 border border-blue-800 font-medium"
-                              title="Aplicar template substituindo todas as configurações"
-                            >
-                              Aplicar
-                            </button>
-                            {key !== 'manager_rotation' && key !== 'manual' && (
-                              <button
-                                onClick={() => applyTemplate(key, null, true)}
-                                className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 border border-green-800 font-medium"
-                                title="Aplicar template respeitando preferências individuais"
-                              >
-                                + Preferências
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex gap-1">
-                          {key === 'manager_rotation' ? (
-                            <div className="flex items-center gap-1">
-                              <Users className="w-4 h-4 text-purple-600" />
-                              <span className="text-sm text-purple-600 font-medium">Gestores</span>
-                            </div>
-                          ) : key === 'manual' ? (
-                            <div className="flex items-center gap-1">
-                              <Edit className="w-4 h-4 text-gray-600" />
-                              <span className="text-sm text-gray-600 font-medium">Controle Manual</span>
-                            </div>
-                          ) : (
-                            template.pattern.map((status, index) => (
-                              <div
-                                key={index}
-                                className={`w-4 h-4 rounded border border-gray-600 ${statusColors[status]}`}
-                                title={statusLabels[status]}
-                              ></div>
-                            ))
-                          )}
-                        </div>
-                        <div className="text-sm text-gray-800 mt-1">
-                          {key === 'manager_rotation' 
-                            ? 'Mínimo de 2 gestores presenciais por dia'
-                            : key === 'manual'
-                              ? 'Configuração manual no calendário'
-                            : `Seg - Sex: ${template.pattern.join(' → ')}`
-                          }
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium mb-3 text-gray-900">Ações Rápidas</h4>
-                  <div className="space-y-3 border border-gray-400 rounded-lg p-4">
-                    <button
-                      onClick={copyPreviousWeek}
-                      className="w-full flex items-center gap-2 px-3 py-2 bg-blue-100 text-blue-800 rounded hover:bg-blue-200 border border-blue-400 font-medium"
-                    >
-                      <Copy className="w-4 h-4" />
-                      Replicar 1ª Semana
-                    </button>
-                    <button
-                      onClick={() => applyTemplate('4x1')}
-                      className="w-full flex items-center gap-2 px-3 py-2 bg-green-100 text-green-800 rounded hover:bg-green-200 border border-green-400 font-medium"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      Aplicar 4x1
-                    </button>
-                    <button
-                      onClick={() => applyTemplate('manager_rotation')}
-                      className="w-full flex items-center gap-2 px-3 py-2 bg-purple-100 text-purple-800 rounded hover:bg-purple-200 border border-purple-400 font-medium"
-                    >
-                      <Users className="w-4 h-4" />
-                      Meta de Gestores
-                    </button>
-                    <button
-                      onClick={() => applyTemplate('manual')}
-                      className="w-full flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200 border border-gray-400 font-medium"
-                    >
-                      <Edit className="w-4 h-4" />
-                      Modo Manual
-                    </button>
-                    <button
-                      onClick={clearAllSchedules}
-                      className="w-full flex items-center gap-2 px-3 py-2 bg-red-100 text-red-800 rounded hover:bg-red-200 border border-red-400 font-medium"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Apagar Tudo
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* Auto Tab - Nova Aba de Distribuição */}
+        {activeTab === 'auto' && userRole !== 'employee' && (
+          <AutoTab
+            employees={employees}
+            userRole={userRole}
+            targetOfficeCount={targetOfficeCount}
+            onApplyCustomDistribution={applyCustomDistribution}
+            onClearAllSchedules={clearAllSchedules}
+          />
         )}
         
         {/* Escalas Tab */}
