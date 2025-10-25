@@ -17,7 +17,10 @@
       "Bash(git add -A)",
       "Bash(git commit -m \"$(cat <<''EOF''\nCorrige base path do GitHub Pages\n\n- Remove vite.config.js duplicado com configuração incorreta\n- Mantém apenas vite.config.ts com base: ''/escala/''\n- Resolve erro 404 nos assets do GitHub Pages\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git commit -m \"$(cat <<''EOF''\nRemove todos os console.log do código\n\n- Remove logs de autenticação (Auth state changed, Login, etc)\n- Remove logs de operações de dados\n- Remove logs de erros\n- Limpa completamente o console em produção\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(npm run build)"
+      "Bash(npm run build)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nCorrige referências de user_id para organization_id nos hooks Supabase\n\nProblema: As tabelas do Supabase (schedules, vacations, system_settings) não \npossuem coluna user_id, mas os hooks estavam tentando usar essa coluna, \nresultando em erro 400 (Bad Request) com mensagem \"column schedules.user_id does not exist\".\n\nSolução implementada:\n- useSchedules: Substitui user_id por organization_id em loadSchedules, \n  setEmployeeStatus e clearAllSchedules\n- useVacations: Substitui user_id por organization_id em loadVacations, \n  setPersonVacation e removeVacation  \n- useSystemSettings: Substitui user_id por organization_id em loadSettings e \n  updateSettings, ajustando também o formato de armazenamento para JSONB\n\nAgora todos os hooks obtêm a organization_id do usuário logado e usam como \nchave para filtrar/buscar dados, consistente com a arquitetura das tabelas \ndefinidas no supabase-setup.sql.\n\nIsso resolve o erro ao tentar \"Apagar Tudo\" na aba Templates e outros problemas \nrelacionados à persistência de dados no banco.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

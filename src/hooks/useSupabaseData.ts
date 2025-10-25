@@ -805,3 +805,79 @@ export const useUserProfiles = () => {
     refresh: loadUserProfiles
   };
 };
+
+// =====================================================
+// Funções de limpeza em lote (para Apagar Tudo)
+// =====================================================
+
+export const clearAllVacationsFromOrg = async (user: any) => {
+  if (!user) return;
+
+  try {
+    // Buscar organização do usuário
+    const { data: orgData } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('owner_id', user.id)
+      .single();
+
+    if (!orgData) throw new Error('Organization not found');
+
+    const { error } = await supabase
+      .from('vacations')
+      .delete()
+      .eq('organization_id', orgData.id);
+
+    if (error) throw error;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const clearAllHolidaysFromOrg = async (user: any) => {
+  if (!user) return;
+
+  try {
+    // Buscar organização do usuário
+    const { data: orgData } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('owner_id', user.id)
+      .single();
+
+    if (!orgData) throw new Error('Organization not found');
+
+    const { error } = await supabase
+      .from('holidays')
+      .delete()
+      .eq('organization_id', orgData.id);
+
+    if (error) throw error;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const clearAllWeekendShiftsFromOrg = async (user: any) => {
+  if (!user) return;
+
+  try {
+    // Buscar organização do usuário
+    const { data: orgData } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('owner_id', user.id)
+      .single();
+
+    if (!orgData) throw new Error('Organization not found');
+
+    const { error } = await supabase
+      .from('weekend_shifts')
+      .delete()
+      .eq('organization_id', orgData.id);
+
+    if (error) throw error;
+  } catch (error) {
+    throw error;
+  }
+};

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Users, Download, Filter, Plus, AlertTriangle, Settings, Copy, RotateCcw, FileText, Edit, X, HelpCircle, Trash2, Save, FolderOpen, Archive, Shield, LogOut } from 'lucide-react';
-import { useTeams, useUserProfiles, useEmployees, useSchedules } from '../hooks/useSupabaseData';
+import { useTeams, useUserProfiles, useEmployees, useSchedules, clearAllVacationsFromOrg, clearAllHolidaysFromOrg, clearAllWeekendShiftsFromOrg } from '../hooks/useSupabaseData';
 import { useAuth } from '../hooks/useAuth';
 import TeamsTab from './tabs/TeamsTab';
 import UsersTab from './tabs/UsersTab';
@@ -387,14 +387,16 @@ const ScheduleApp = () => {
 
   const getEmployeeStatus = (employeeId, date) => {
     const dateStr = dateToString(date);
-    
+
+    // Verificar feriados
     if (holidays[dateStr]) {
       if (holidayStaff[dateStr] && holidayStaff[dateStr].includes(employeeId)) {
         return 'holiday';
       }
       return 'holiday';
     }
-    
+
+    // Verificar plantões de fim de semana
     const dayOfWeek = date.getDay();
     if ((dayOfWeek === 0 || dayOfWeek === 6) && weekendShifts[dateStr]) {
       if (weekendStaff[dateStr] && weekendStaff[dateStr].includes(employeeId)) {
@@ -402,35 +404,26 @@ const ScheduleApp = () => {
       }
       return 'holiday';
     }
-    
+
+    // Verificar férias
     if (vacations[employeeId]) {
       const vacation = vacations[employeeId];
       const startDate = vacation.start;
       const endDate = vacation.end;
-      
+
       if (dateStr >= startDate && dateStr <= endDate) {
         return 'vacation';
       }
     }
-    
+
+    // Retornar escala preenchida (se existir, caso contrário nada)
     if (schedules[employeeId] && schedules[employeeId][dateStr]) {
       return schedules[employeeId][dateStr];
     }
-    
-    const employee = employees.find(emp => emp.id === employeeId);
-    if (!employee) return null;
 
-    switch (employee.type) {
-      case 'always_office':
-        return 'office';
-      case 'always_home':
-        return 'home';
-      case 'variable':
-        // Lógica automática para Presença Variável
-        return getVariableEmployeeAutoStatus(employee, date);
-      default:
-        return null;
-    }
+    // ❌ REMOVIDO: Fallback para status padrão por tipo
+    // Agora retorna null se não houver escala preenchida
+    return null;
   };
 
   // Função auxiliar para determinar status automático de funcionários com Presença Variável
@@ -666,32 +659,27 @@ const ScheduleApp = () => {
     console.log('Total de employees:', employees.length);
     console.log('Employees:', employees);
 
+    // Aplicar template a TODOS os funcionários
     const targetEmployees = employees.filter(emp =>
-      emp.type === 'variable' &&
-      (!specificTeam || emp.team === specificTeam)
+      !specificTeam || emp.team === specificTeam
     );
 
-    console.log('Target employees (variáveis):', targetEmployees.length);
+    console.log('Target employees (todos):', targetEmployees.length);
     console.log('Target employees:', targetEmployees);
 
     const affectedCount = targetEmployees.length;
-    const alwaysFixedCount = employees.filter(emp => emp.type === 'always_office' || emp.type === 'always_home').length;
-    
+
     let confirmMessage = `Aplicar template "${template.name}"?\n\n`;
     confirmMessage += `📊 Pessoas afetadas:\n`;
-    confirmMessage += `• ${affectedCount} pessoas variáveis (serão reconfiguradas)\n`;
-    
-    if (alwaysFixedCount > 0) {
-      confirmMessage += `• ${alwaysFixedCount} sempre fixas (preservadas)\n`;
-    }
-    
+    confirmMessage += `• ${affectedCount} funcionários (todas as escalas serão preenchidas)\n`;
+
     confirmMessage += `\n🎯 Meta: ${targetOfficeCount} pessoas presenciais por dia\n`;
-    
+
     if (respectPreferences) {
       confirmMessage += `✅ Respeitando preferências individuais\n`;
     }
-    
-    confirmMessage += `\n⚠️ Configurações manuais existentes serão sobrescritas!`;
+
+    confirmMessage += `\n⚠️ Todas as escalas serão preenchidas de acordo com o template!`;
     
     showConfirm(
       '📋 Aplicar Template',
@@ -975,65 +963,60 @@ const ScheduleApp = () => {
   };
 
   const clearAllSchedules = () => {
-    console.log('=== CLEAR ALL SCHEDULES ===');
+    console.log('=== CLEAR ALL DATA ===');
     console.log('Total employees:', employees.length);
 
     showConfirm(
-      '⚠️ Apagar Todas as Escalas',
-      'Tem certeza que deseja apagar TODAS as escalas de TODOS os usuários?\n\nEsta ação não pode ser desfeita!\n\n⚠️ Todas as configurações de escalas serão removidas.',
+      '⚠️ Apagar TODOS os Dados de Escala',
+      'Tem certeza que deseja apagar TODOS os dados?\n\nEsta ação irá remover:\n• Escalas (schedules)\n• Férias (vacations)\n• Feriados (holidays)\n• Plantões de fim de semana (weekend shifts)\n\nEsta ação NÃO pode ser desfeita!',
       () => {
-        console.log('User confirmed - clearing schedules...');
+        console.log('User confirmed - clearing all schedule data...');
 
-        // Obter todos os dias do mês atual
-        const days = getDaysInMonth(currentDate).filter(day => day && day.getDay() >= 1 && day.getDay() <= 5);
+        // Limpar states locais
+        setSchedules({});
+        setVacations({});
+        setHolidays({});
+        setHolidayStaff({});
+        setWeekendShifts({});
+        setWeekendStaff({});
 
-        // Limpa todos os schedules de todos os usuários
-        // Define explicitamente null para cada dia para evitar fallback automático
-        const clearedSchedules = {};
-        employees.forEach(emp => {
-          clearedSchedules[emp.id] = {};
-          days.forEach(day => {
-            const dateStr = dateToString(day);
-            clearedSchedules[emp.id][dateStr] = null;
+        // Limpar do Supabase em paralelo
+        console.log('\n=== Clearing all data from Supabase ===');
+        const { user } = useAuth();
+
+        Promise.all([
+          clearAllSchedulesDb(),
+          clearAllVacationsFromOrg(user),
+          clearAllHolidaysFromOrg(user),
+          clearAllWeekendShiftsFromOrg(user)
+        ])
+          .then(() => {
+            console.log('All data cleared from Supabase!');
+            refreshSchedules(); // Recarregar do banco
+
+            const change = {
+              id: Date.now(),
+              timestamp: new Date(),
+              action: '🗑️ Apagou TODOS os dados de escala (escalas, férias, feriados e plantões)'
+            };
+            setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
+
+            console.log('All data cleared successfully!');
+
+            showAlert(
+              '✅ Todos os Dados Apagados!',
+              'Escalas, férias, feriados e plantões foram removidos com sucesso.\n\nO calendário está limpo e pronto para novos dados.',
+              'info'
+            );
+          })
+          .catch(error => {
+            console.error('Error clearing data from Supabase:', error);
+            showAlert(
+              '❌ Erro ao Apagar!',
+              'Ocorreu um erro ao apagar os dados do banco de dados.',
+              'error'
+            );
           });
-          console.log(`Clearing schedule for ${emp.name} (id: ${emp.id}) - ${days.length} days set to null`);
-        });
-
-        console.log('Setting cleared schedules:', clearedSchedules);
-        setSchedules(prev => {
-          console.log('Previous schedules:', prev);
-          console.log('New schedules (cleared):', clearedSchedules);
-          return clearedSchedules;
-        });
-
-        // Limpar do Supabase
-        console.log('\n=== Clearing schedules from Supabase ===');
-        clearAllSchedulesDb().then(() => {
-          console.log('All schedules cleared from Supabase!');
-          refreshSchedules(); // Recarregar do banco
-
-          const change = {
-            id: Date.now(),
-            timestamp: new Date(),
-            action: '🗑️ Apagou TODAS as escalas de todos os usuários'
-          };
-          setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
-
-          console.log('Schedules cleared successfully!');
-
-          showAlert(
-            '✅ Escalas Apagadas!',
-            'Todas as escalas foram removidas com sucesso do banco de dados.',
-            'info'
-          );
-        }).catch(error => {
-          console.error('Error clearing schedules from Supabase:', error);
-          showAlert(
-            '❌ Erro ao Apagar!',
-            'Ocorreu um erro ao apagar as escalas do banco de dados.',
-            'error'
-          );
-        });
       },
       'error'
     );

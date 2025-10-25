@@ -1,23 +1,20 @@
-Outro detalhe.
+Ao tentar apagar, houve este erro
 
-Na aba Escalas, no componente Ver Detalhes, há um campo que mostra 
+❌ Erro ao Apagar!
+Ocorreu um erro ao apagar as escalas do banco de dados.
 
-Dias Presencial (Orientativo)
-3 dias/semana
-Orientativo
+@supabase_supabase-js.js?v=116a3faf:4230  DELETE https://rdkvvigjmowtvhxqlrnp.supabase.co/rest/v1/schedules?user_id=eq.2c467a78-f3ee-43ca-86d0-59a79999010d 400 (Bad Request)
+(anonymous) @ @supabase_supabase-js.js?v=116a3faf:4230
+(anonymous) @ @supabase_supabase-js.js?v=116a3faf:4251
+fulfilled @ @supabase_supabase-js.js?v=116a3faf:4203
+Promise.then
+step @ @supabase_supabase-js.js?v=116a3faf:4216
+(anonymous) @ @supabase_supabase-js.js?v=116a3faf:4218
+__awaiter6 @ @supabase_supabase-js.js?v=116a3faf:4200
+(anonymous) @ @supabase_supabase-js.js?v=116a3faf:4241
+then @ @supabase_supabase-js.js?v=116a3faf:90Understand this error
+ScheduleApp.tsx:1030 Error clearing schedules from Supabase: {code: '42703', details: null, hint: null, message: 'column schedules.user_id does not exist'}
 
-Esse campo sempre aparece assim seja o regime de trabalho Sempre Home Office ou Sempre Presencial.
 
-Se a escolha tiver sido Sempre Presencial, então o correto seria
+Verifique se a tabela que está a ser chamado existe na arquitetura do sistema. Há diversos arquivos sql na raiz que contém a arquitetura. Verifique outros problemas caso não seja um problema de existência de tabela no banco
 
-Dias Presencial (Orientativo)
-5 dias/semana
-Orientativo
-
-Se a escolha tiver sido Sempre Home Office, então o correto seria
-
-Dias Presencial (Orientativo)
-0 dias/semana
-Orientativo
-
-Além disso, retire a palavra Orientativo onde aparecer. É desnecessária.
