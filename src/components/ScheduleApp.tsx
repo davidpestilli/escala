@@ -2137,14 +2137,19 @@ const ScheduleApp = () => {
               )}
 
               {employees.length > 0 && (
-                <div className="overflow-y-auto max-h-[calc(100vh-250px)]">
-                  <div className="grid grid-cols-7 gap-1">
-                  {weekDays.map(day => (
-                    <div key={day} className="p-3 text-center font-medium text-gray-900 bg-gray-200 border border-gray-400 shadow-sm">
-                      {day}
-                    </div>
-                  ))}
-                  
+                <>
+                  {/* Dias da semana - Fixo */}
+                  <div className="grid grid-cols-7 gap-1 mb-1">
+                    {weekDays.map(day => (
+                      <div key={day} className="p-3 text-center font-medium text-gray-900 bg-gray-200 border border-gray-400 shadow-sm">
+                        {day}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Container com scroll - Apenas os dias */}
+                  <div className="overflow-y-auto max-h-[calc(100vh-300px)]">
+                    <div className="grid grid-cols-7 gap-1">
                   {days.map((day, index) => {
                     if (!day) {
                       return <div key={index} className="p-2 min-h-[200px]"></div>;
@@ -2463,8 +2468,9 @@ const ScheduleApp = () => {
                       </div>
                     );
                   })}
+                    </div>
                   </div>
-                </div>
+                </>
               )}
                 </div>
               </div>
@@ -2472,16 +2478,16 @@ const ScheduleApp = () => {
 
               {/* Container de Filtros - Direita (Slide In/Out) */}
               <div
-                className={`bg-white rounded-lg shadow-sm border border-gray-300 transition-all duration-500 ease-in-out overflow-hidden ${
-                  filtersSidebarExpanded ? 'w-72' : 'w-16'
+                className={`bg-white rounded-lg shadow-sm border border-gray-300 transition-all duration-600 ease-in-out overflow-hidden ${
+                  filtersSidebarExpanded ? 'w-68' : 'w-16'
                 }`}
                 onMouseEnter={() => setFiltersSidebarExpanded(true)}
                 onMouseLeave={() => setFiltersSidebarExpanded(false)}
               >
-                <div className={`p-4 h-full transition-all duration-500 ${filtersSidebarExpanded ? '' : 'flex flex-col items-center justify-center gap-6'}`}>
+                <div className={`p-4 h-full transition-all duration-600 ${filtersSidebarExpanded ? '' : 'flex flex-col items-center justify-center gap-6'}`}>
                   {!filtersSidebarExpanded ? (
                     /* Ícones individuais quando recolhido - centralizados verticalmente */
-                    <div className="transition-opacity duration-500">
+                    <div className="transition-opacity duration-600">
                       {/* Ícone Nickname */}
                       <div className="relative mb-6">
                         <User className="w-6 h-6 text-gray-700" title="Filtro por Nickname" />
@@ -2518,7 +2524,7 @@ const ScheduleApp = () => {
                     </div>
                   )}
 
-                  <div className={`space-y-4 transition-opacity duration-500 ${filtersSidebarExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                  <div className={`space-y-4 transition-opacity duration-600 ${filtersSidebarExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                     <div className="relative">
                       <label className="block text-sm font-medium text-gray-900 mb-2">
                         Nickname
