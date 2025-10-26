@@ -2472,18 +2472,18 @@ const ScheduleApp = () => {
 
               {/* Container de Filtros - Direita (Slide In/Out) */}
               <div
-                className={`bg-white rounded-lg shadow-sm border border-gray-300 transition-all duration-300 ease-in-out overflow-hidden ${
+                className={`bg-white rounded-lg shadow-sm border border-gray-300 transition-all duration-500 ease-in-out overflow-hidden ${
                   filtersSidebarExpanded ? 'w-72' : 'w-16'
                 }`}
                 onMouseEnter={() => setFiltersSidebarExpanded(true)}
                 onMouseLeave={() => setFiltersSidebarExpanded(false)}
               >
-                <div className={`p-4 h-full ${filtersSidebarExpanded ? '' : 'flex flex-col items-center justify-center gap-6'}`}>
+                <div className={`p-4 h-full transition-all duration-500 ${filtersSidebarExpanded ? '' : 'flex flex-col items-center justify-center gap-6'}`}>
                   {!filtersSidebarExpanded ? (
                     /* Ícones individuais quando recolhido - centralizados verticalmente */
-                    <>
+                    <div className="transition-opacity duration-500">
                       {/* Ícone Nickname */}
-                      <div className="relative">
+                      <div className="relative mb-6">
                         <User className="w-6 h-6 text-gray-700" title="Filtro por Nickname" />
                         {filters.employee && (
                           <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
@@ -2491,7 +2491,7 @@ const ScheduleApp = () => {
                       </div>
 
                       {/* Ícone Equipe */}
-                      <div className="relative">
+                      <div className="relative mb-6">
                         <Users className="w-6 h-6 text-gray-700" title="Filtro por Equipe" />
                         {filters.team && filters.team !== '' && filters.team !== 'VAZIO' && (
                           <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
@@ -2505,20 +2505,20 @@ const ScheduleApp = () => {
                           <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
                         )}
                       </div>
-                    </>
+                    </div>
                   ) : (
                     /* Conteúdo expandido com título */
-                    <>
+                    <div className="transition-opacity duration-500">
                       <div className="flex items-center gap-2 mb-6">
                         <Filter className="flex-shrink-0 w-5 h-5 text-gray-700" />
                         <h3 className="font-semibold text-gray-900">
                           Filtros
                         </h3>
                       </div>
-                    </>
+                    </div>
                   )}
 
-                  <div className={`space-y-4 ${filtersSidebarExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                  <div className={`space-y-4 transition-opacity duration-500 ${filtersSidebarExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                     <div className="relative">
                       <label className="block text-sm font-medium text-gray-900 mb-2">
                         Nickname
