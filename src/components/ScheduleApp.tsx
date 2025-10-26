@@ -2148,7 +2148,7 @@ const ScheduleApp = () => {
                   </div>
 
                   {/* Container com scroll - Apenas os dias */}
-                  <div className="overflow-y-auto max-h-[calc(100vh-300px)]">
+                  <div className="overflow-y-auto max-h-[calc(100vh-300px)]" style={{ scrollbarGutter: 'stable' }}>
                     <div className="grid grid-cols-7 gap-1">
                   {days.map((day, index) => {
                     if (!day) {
