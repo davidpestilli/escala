@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Users, Download, Filter, Plus, AlertTriangle, Settings, Copy, RotateCcw, FileText, Edit, X, HelpCircle, Trash2, Save, FolderOpen, Archive, Shield, LogOut } from 'lucide-react';
+import { Calendar, Users, User, Home, Download, Filter, Plus, AlertTriangle, Settings, Copy, RotateCcw, FileText, Edit, X, HelpCircle, Trash2, Save, FolderOpen, Archive, Shield, LogOut } from 'lucide-react';
 import { useTeams, useUserProfiles, useEmployees, useSchedules, clearAllVacationsFromOrg, clearAllHolidaysFromOrg, clearAllWeekendShiftsFromOrg } from '../hooks/useSupabaseData';
 import { useAuth } from '../hooks/useAuth';
 import TeamsTab from './tabs/TeamsTab';
@@ -2478,15 +2478,45 @@ const ScheduleApp = () => {
                 onMouseEnter={() => setFiltersSidebarExpanded(true)}
                 onMouseLeave={() => setFiltersSidebarExpanded(false)}
               >
-                <div className="p-4 h-full">
-                  <div className="flex items-center gap-2 mb-6">
-                    <Filter className={`flex-shrink-0 ${filtersSidebarExpanded ? 'w-5 h-5' : 'w-6 h-6'} text-gray-700`} />
-                    <h3 className={`font-semibold text-gray-900 whitespace-nowrap overflow-hidden transition-all duration-300 ${
-                      filtersSidebarExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0'
-                    }`}>
-                      Filtros
-                    </h3>
-                  </div>
+                <div className={`p-4 h-full ${filtersSidebarExpanded ? '' : 'flex flex-col items-center justify-center gap-6'}`}>
+                  {!filtersSidebarExpanded ? (
+                    /* Ícones individuais quando recolhido - centralizados verticalmente */
+                    <>
+                      {/* Ícone Nickname */}
+                      <div className="relative">
+                        <User className="w-6 h-6 text-gray-700" title="Filtro por Nickname" />
+                        {filters.employee && (
+                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                        )}
+                      </div>
+
+                      {/* Ícone Equipe */}
+                      <div className="relative">
+                        <Users className="w-6 h-6 text-gray-700" title="Filtro por Equipe" />
+                        {filters.team && filters.team !== '' && filters.team !== 'VAZIO' && (
+                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                        )}
+                      </div>
+
+                      {/* Ícone Status */}
+                      <div className="relative">
+                        <Home className="w-6 h-6 text-gray-700" title="Filtro por Status" />
+                        {filters.currentStatus && (
+                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    /* Conteúdo expandido com título */
+                    <>
+                      <div className="flex items-center gap-2 mb-6">
+                        <Filter className="flex-shrink-0 w-5 h-5 text-gray-700" />
+                        <h3 className="font-semibold text-gray-900">
+                          Filtros
+                        </h3>
+                      </div>
+                    </>
+                  )}
 
                   <div className={`space-y-4 ${filtersSidebarExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                     <div className="relative">
