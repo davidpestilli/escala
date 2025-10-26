@@ -2137,9 +2137,9 @@ const ScheduleApp = () => {
               )}
 
               {employees.length > 0 && (
-                <>
-                  {/* Dias da semana - Fixo */}
-                  <div className="grid grid-cols-7 gap-1 mb-1">
+                <div className="overflow-y-scroll max-h-[calc(100vh-300px)]">
+                  {/* Dias da semana - Sticky */}
+                  <div className="grid grid-cols-7 gap-1 mb-1 sticky top-0 z-10 bg-white">
                     {weekDays.map(day => (
                       <div key={day} className="p-3 text-center font-medium text-gray-900 bg-gray-200 border border-gray-400 shadow-sm">
                         {day}
@@ -2147,9 +2147,8 @@ const ScheduleApp = () => {
                     ))}
                   </div>
 
-                  {/* Container com scroll - Apenas os dias */}
-                  <div className="overflow-y-scroll max-h-[calc(100vh-300px)]">
-                    <div className="grid grid-cols-7 gap-1">
+                  {/* Grid dos dias */}
+                  <div className="grid grid-cols-7 gap-1">
                   {days.map((day, index) => {
                     if (!day) {
                       return <div key={index} className="p-2 min-h-[200px]"></div>;
@@ -2468,9 +2467,8 @@ const ScheduleApp = () => {
                       </div>
                     );
                   })}
-                    </div>
                   </div>
-                </>
+                </div>
               )}
                 </div>
               </div>
