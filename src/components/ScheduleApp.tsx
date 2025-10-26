@@ -2473,7 +2473,7 @@ const ScheduleApp = () => {
               {/* Container de Filtros - Direita (Slide In/Out) */}
               <div
                 className={`bg-white rounded-lg shadow-sm border border-gray-300 transition-all duration-300 ease-in-out overflow-hidden ${
-                  filtersSidebarExpanded ? 'w-96' : 'w-16'
+                  filtersSidebarExpanded ? 'w-72' : 'w-16'
                 }`}
                 onMouseEnter={() => setFiltersSidebarExpanded(true)}
                 onMouseLeave={() => setFiltersSidebarExpanded(false)}
