@@ -2476,16 +2476,16 @@ const ScheduleApp = () => {
 
               {/* Container de Filtros - Direita (Slide In/Out) */}
               <div
-                className={`bg-white rounded-lg shadow-sm border border-gray-300 transition-all duration-600 ease-in-out overflow-hidden ${
+                className={`bg-white rounded-lg shadow-sm border border-gray-300 transition-all duration-300 ease-in-out overflow-hidden ${
                   filtersSidebarExpanded ? 'w-68' : 'w-16'
                 }`}
                 onMouseEnter={() => setFiltersSidebarExpanded(true)}
                 onMouseLeave={() => setFiltersSidebarExpanded(false)}
               >
-                <div className={`p-4 h-full transition-all duration-600 ${filtersSidebarExpanded ? '' : 'flex flex-col items-center justify-center gap-6'}`}>
+                <div className={`p-4 h-full transition-all duration-300 ${filtersSidebarExpanded ? '' : 'flex flex-col items-center justify-center gap-6'}`}>
                   {!filtersSidebarExpanded ? (
                     /* Ícones individuais quando recolhido - centralizados verticalmente */
-                    <div className="transition-opacity duration-600">
+                    <div className="transition-opacity duration-300">
                       {/* Ícone Nickname */}
                       <div className="relative mb-6">
                         <User className="w-6 h-6 text-gray-700" title="Filtro por Nickname" />
@@ -2512,7 +2512,7 @@ const ScheduleApp = () => {
                     </div>
                   ) : (
                     /* Conteúdo expandido com título */
-                    <div className="transition-opacity duration-500">
+                    <div className="transition-opacity duration-300">
                       <div className="flex items-center gap-2 mb-6">
                         <Filter className="flex-shrink-0 w-5 h-5 text-gray-700" />
                         <h3 className="font-semibold text-gray-900">
@@ -2522,7 +2522,7 @@ const ScheduleApp = () => {
                     </div>
                   )}
 
-                  <div className={`space-y-4 transition-opacity duration-600 ${filtersSidebarExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                  <div className={`space-y-4 transition-opacity duration-300 ${filtersSidebarExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                     <div className="relative">
                       <label className="block text-sm font-medium text-gray-900 mb-2">
                         Nickname
