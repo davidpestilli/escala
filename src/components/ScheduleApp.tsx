@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Users, User, Home, Download, Filter, Plus, AlertTriangle, Settings, Copy, RotateCcw, FileText, Edit, X, HelpCircle, Trash2, Save, FolderOpen, Archive, Shield, LogOut } from 'lucide-react';
+import { Calendar, Users, User, Home, Clock, Download, Filter, Plus, AlertTriangle, Settings, Copy, RotateCcw, FileText, Edit, X, HelpCircle, Trash2, Save, FolderOpen, Archive, Shield, LogOut } from 'lucide-react';
 import { useTeams, useUserProfiles, useEmployees, useSchedules, clearAllVacationsFromOrg, clearAllHolidaysFromOrg, clearAllWeekendShiftsFromOrg } from '../hooks/useSupabaseData';
 import { useAuth } from '../hooks/useAuth';
 import TeamsTab from './tabs/TeamsTab';
@@ -43,7 +43,7 @@ const ScheduleApp = () => {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
   
-  const [filters, setFilters] = useState({ employee: '', team: 'VAZIO', currentStatus: '' });
+  const [filters, setFilters] = useState({ employee: '', team: 'VAZIO', currentStatus: '', shift: '' });
   const [showImportModal, setShowImportModal] = useState(false);
   const [importText, setImportText] = useState('');
   const [newEmployee, setNewEmployee] = useState({
@@ -1606,6 +1606,13 @@ const ScheduleApp = () => {
         }
       }
 
+      // Filtro por turno
+      if (filters.shift && filters.shift !== 'Ambos') {
+        if (emp.workingHours !== filters.shift) {
+          return false;
+        }
+      }
+
       if (!filters.currentStatus) {
         return true;
       }
@@ -1637,6 +1644,13 @@ const ScheduleApp = () => {
           return !emp.team || emp.team.trim() === '';
         } else if (filters.team !== 'VAZIO') {
           return emp.team === filters.team;
+        }
+      }
+
+      // Filtro por turno
+      if (filters.shift && filters.shift !== 'Ambos') {
+        if (emp.workingHours !== filters.shift) {
+          return false;
         }
       }
 
@@ -2503,9 +2517,17 @@ const ScheduleApp = () => {
                       </div>
 
                       {/* Ícone Status */}
-                      <div className="relative">
+                      <div className="relative mb-6">
                         <Home className="w-6 h-6 text-gray-700" title="Filtro por Status" />
                         {filters.currentStatus && (
+                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                        )}
+                      </div>
+
+                      {/* Ícone Turno */}
+                      <div className="relative">
+                        <Clock className="w-6 h-6 text-gray-700" title="Filtro por Turno" />
+                        {filters.shift && filters.shift !== '' && filters.shift !== 'Ambos' && (
                           <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
                         )}
                       </div>
@@ -2603,6 +2625,21 @@ const ScheduleApp = () => {
                         <option value="home">🔵 Home Office</option>
                         <option value="vacation">🟠 Férias</option>
                         <option value="holiday">⚫ Plantão/Feriado</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-900 mb-2">
+                        Turno
+                      </label>
+                      <select
+                        value={filters.shift || ''}
+                        onChange={(e) => setFilters(prev => ({ ...prev, shift: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300 text-sm"
+                      >
+                        <option value="">Ambos</option>
+                        <option value="9-17">🌅 9-17</option>
+                        <option value="11-19">🌆 11-19</option>
                       </select>
                     </div>
                   </div>
