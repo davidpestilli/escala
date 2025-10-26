@@ -25,6 +25,8 @@ const ScheduleApp = () => {
   const [maxCapacity, setMaxCapacity] = useState(10);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [activeTab, setActiveTab] = useState('calendar');
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [filtersSidebarExpanded, setFiltersSidebarExpanded] = useState(false);
 
   // Role agora vem do perfil do banco, com fallback para 'employee' se não houver perfil
   const userRole = currentUserProfile?.role || 'employee';
@@ -1830,12 +1832,12 @@ const ScheduleApp = () => {
   const advancedReportData = getAdvancedReportsData();
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
+    <div className="min-h-screen bg-gray-50">
       <style>{`
         .person-card-expanded {
           animation: expandCard 0.3s ease-out;
         }
-        
+
         @keyframes expandCard {
           from {
             max-height: 0;
@@ -1846,36 +1848,36 @@ const ScheduleApp = () => {
             opacity: 1;
           }
         }
-        
+
         .transition-all {
           transition: all 0.3s ease;
         }
       `}</style>
-      
-      <div className="max-w-7xl mx-auto">
+
+      <div className="w-full">
         {/* Header Superior - Moderno e Profissional */}
-        <div style={{background: 'linear-gradient(to right, #2563eb, #4f46e5)'}} className="rounded-xl shadow-xl p-6 mb-6">
-          <div className="flex items-center justify-between">
+        <div className={`bg-gradient-to-r from-blue-600 to-indigo-700 shadow-xl px-6 py-4 mb-1 transition-all duration-300 ${sidebarExpanded ? 'ml-64' : 'ml-20'}`}>
+          <div className="flex items-center justify-between px-4">
             <div className="flex items-center gap-4">
-              <div style={{backgroundColor: '#3b82f6'}} className="p-3 rounded-xl shadow-lg">
-                <Calendar style={{color: 'white', width: '32px', height: '32px'}} />
+              <div className="bg-blue-500 p-3 rounded-xl shadow-lg">
+                <Calendar className="text-white w-8 h-8" />
               </div>
               <div>
-                <h1 style={{color: 'white', fontSize: '30px', fontWeight: 'bold'}}>
+                <h1 className="text-white text-3xl font-bold">
                   Sistema de Escalas
                 </h1>
-                <p style={{color: '#dbeafe', fontSize: '14px', marginTop: '4px'}}>
+                <p className="text-blue-100 text-sm mt-1">
                   Gestão inteligente de teletrabalho
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
-              <div style={{backgroundColor: '#3b82f6'}} className="flex items-center gap-2 rounded-lg px-4 py-3 shadow-md">
-                <Shield style={{color: 'white', width: '20px', height: '20px'}} />
+              <div className="bg-blue-500 flex items-center gap-2 rounded-lg px-4 py-3 shadow-md">
+                <Shield className="text-white w-5 h-5" />
                 <div className="text-sm">
-                  <span style={{color: 'white', fontWeight: '600'}}>{userNick}</span>
-                  <span style={{color: '#dbeafe'}} className="ml-2">
+                  <span className="text-white font-semibold">{userNick}</span>
+                  <span className="text-blue-100 ml-2">
                     {userRole === 'admin' && '👑 Admin'}
                     {userRole === 'manager' && '👨‍💼 Gerente'}
                     {userRole === 'employee' && '👤 Colaborador'}
@@ -1885,253 +1887,220 @@ const ScheduleApp = () => {
 
               <button
                 onClick={signOut}
-                style={{backgroundColor: '#dc2626', color: 'white'}}
-                className="flex items-center gap-2 px-4 py-3 rounded-lg hover:bg-red-700 shadow-md font-semibold transition-all"
+                className="bg-red-600 text-white flex items-center gap-2 px-4 py-3 rounded-lg hover:bg-red-700 shadow-md font-semibold transition-all"
               >
-                <LogOut style={{width: '20px', height: '20px'}} />
+                <LogOut className="w-5 h-5" />
                 Sair
               </button>
             </div>
           </div>
         </div>
 
-        {/* Container de Navegação - Design Moderno */}
-        <div className="bg-white rounded-xl shadow-md p-2 mb-6 border border-gray-200">
-          <div className="flex items-center justify-between">
-            {/* Tabs com design pill/badge moderno */}
-            <div className="flex gap-2 flex-wrap">
+        {/* Sidebar Vertical Retrátil */}
+        <div
+          className={`fixed left-0 top-0 h-full bg-white shadow-2xl border-r-2 border-gray-200 transition-all duration-300 ease-in-out z-40 ${
+            sidebarExpanded ? 'w-64' : 'w-20'
+          }`}
+          onMouseEnter={() => setSidebarExpanded(true)}
+          onMouseLeave={() => setSidebarExpanded(false)}
+        >
+          <div className="flex flex-col h-full pt-24">
+            {/* Calendário */}
+            <button
+              onClick={() => setActiveTab('calendar')}
+              className={`flex items-center px-4 py-4 transition-all duration-200 ${
+                activeTab === 'calendar'
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-r-4 border-blue-800'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+              title="Calendário"
+            >
+              <Calendar className={`${sidebarExpanded ? 'w-5 h-5' : 'w-6 h-6'} flex-shrink-0`} />
+              <span className={`ml-4 font-medium whitespace-nowrap overflow-hidden transition-all duration-300 ${
+                sidebarExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0'
+              }`}>
+                Calendário
+              </span>
+            </button>
+
+            {/* Escalas */}
+            <button
+              onClick={() => userRole !== 'employee' && setActiveTab('people')}
+              disabled={userRole === 'employee'}
+              className={`flex items-center px-4 py-4 transition-all duration-200 ${
+                userRole === 'employee'
+                  ? 'text-gray-400 opacity-50 cursor-not-allowed'
+                  : activeTab === 'people'
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-r-4 border-blue-800'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+              title="Escalas"
+            >
+              <Users className={`${sidebarExpanded ? 'w-5 h-5' : 'w-6 h-6'} flex-shrink-0`} />
+              <span className={`ml-4 font-medium whitespace-nowrap overflow-hidden transition-all duration-300 ${
+                sidebarExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0'
+              }`}>
+                Escalas
+              </span>
+            </button>
+
+            {/* Auto */}
+            <button
+              onClick={() => userRole !== 'employee' && setActiveTab('auto')}
+              disabled={userRole === 'employee'}
+              className={`flex items-center px-4 py-4 transition-all duration-200 ${
+                userRole === 'employee'
+                  ? 'text-gray-400 opacity-50 cursor-not-allowed'
+                  : activeTab === 'auto'
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-r-4 border-blue-800'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+              title="Auto"
+            >
+              <RotateCcw className={`${sidebarExpanded ? 'w-5 h-5' : 'w-6 h-6'} flex-shrink-0`} />
+              <span className={`ml-4 font-medium whitespace-nowrap overflow-hidden transition-all duration-300 ${
+                sidebarExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0'
+              }`}>
+                Auto
+              </span>
+            </button>
+
+            {/* Relatórios */}
+            <button
+              onClick={() => userRole !== 'employee' && setActiveTab('reports')}
+              disabled={userRole === 'employee'}
+              className={`flex items-center px-4 py-4 transition-all duration-200 ${
+                userRole === 'employee'
+                  ? 'text-gray-400 opacity-50 cursor-not-allowed'
+                  : activeTab === 'reports'
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-r-4 border-blue-800'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+              title="Relatórios"
+            >
+              <FileText className={`${sidebarExpanded ? 'w-5 h-5' : 'w-6 h-6'} flex-shrink-0`} />
+              <span className={`ml-4 font-medium whitespace-nowrap overflow-hidden transition-all duration-300 ${
+                sidebarExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0'
+              }`}>
+                Relatórios
+              </span>
+            </button>
+
+            {/* Configurações */}
+            <button
+              onClick={() => userRole !== 'employee' && setActiveTab('settings')}
+              disabled={userRole === 'employee'}
+              className={`flex items-center px-4 py-4 transition-all duration-200 ${
+                userRole === 'employee'
+                  ? 'text-gray-400 opacity-50 cursor-not-allowed'
+                  : activeTab === 'settings'
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-r-4 border-blue-800'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+              title="Configurações"
+            >
+              <Settings className={`${sidebarExpanded ? 'w-5 h-5' : 'w-6 h-6'} flex-shrink-0`} />
+              <span className={`ml-4 font-medium whitespace-nowrap overflow-hidden transition-all duration-300 ${
+                sidebarExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0'
+              }`}>
+                Configurações
+              </span>
+            </button>
+
+            {/* Equipes */}
+            <button
+              onClick={() => userRole !== 'employee' && setActiveTab('teams')}
+              disabled={userRole === 'employee'}
+              className={`flex items-center px-4 py-4 transition-all duration-200 ${
+                userRole === 'employee'
+                  ? 'text-gray-400 opacity-50 cursor-not-allowed'
+                  : activeTab === 'teams'
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-r-4 border-blue-800'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+              title="Equipes"
+            >
+              <Users className={`${sidebarExpanded ? 'w-5 h-5' : 'w-6 h-6'} flex-shrink-0`} />
+              <span className={`ml-4 font-medium whitespace-nowrap overflow-hidden transition-all duration-300 ${
+                sidebarExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0'
+              }`}>
+                Equipes
+              </span>
+            </button>
+
+            {/* Usuários */}
+            <button
+              onClick={() => userRole !== 'employee' && setActiveTab('users')}
+              disabled={userRole === 'employee'}
+              className={`flex items-center px-4 py-4 transition-all duration-200 ${
+                userRole === 'employee'
+                  ? 'text-gray-400 opacity-50 cursor-not-allowed'
+                  : activeTab === 'users'
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-r-4 border-blue-800'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+              title="Usuários"
+            >
+              <Shield className={`${sidebarExpanded ? 'w-5 h-5' : 'w-6 h-6'} flex-shrink-0`} />
+              <span className={`ml-4 font-medium whitespace-nowrap overflow-hidden transition-all duration-300 ${
+                sidebarExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0'
+              }`}>
+                Usuários
+              </span>
+            </button>
+
+            {/* Ajuda */}
+            <div className="mt-auto mb-4">
               <button
-                onClick={() => setActiveTab('calendar')}
-                style={activeTab === 'calendar' ? {
-                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
-                  color: 'white',
-                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
-                  transform: 'scale(1.05)'
-                } : {
-                  color: '#374151'
-                }}
-                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
+                onClick={() => setShowHelp(true)}
+                className="flex items-center px-4 py-4 text-gray-700 hover:bg-gray-100 transition-all duration-200 w-full"
+                title="Ajuda e Legendas"
               >
-                <Calendar className="w-4 h-4" />
-                <span>Calendário</span>
-              </button>
-              <button
-                onClick={() => userRole !== 'employee' && setActiveTab('people')}
-                disabled={userRole === 'employee'}
-                style={userRole === 'employee' ? {color: '#9ca3af', opacity: 0.5, cursor: 'not-allowed'} : activeTab === 'people' ? {
-                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
-                  color: 'white',
-                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
-                  transform: 'scale(1.05)'
-                } : {color: '#374151'}}
-                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
-              >
-                <Users className="w-4 h-4" />
-                <span>Escalas</span>
-              </button>
-              <button
-                onClick={() => userRole !== 'employee' && setActiveTab('auto')}
-                disabled={userRole === 'employee'}
-                style={userRole === 'employee' ? {color: '#9ca3af', opacity: 0.5, cursor: 'not-allowed'} : activeTab === 'auto' ? {
-                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
-                  color: 'white',
-                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
-                  transform: 'scale(1.05)'
-                } : {color: '#374151'}}
-                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
-              >
-                <FileText className="w-4 h-4" />
-                <span>Auto</span>
-              </button>
-              <button
-                onClick={() => userRole !== 'employee' && setActiveTab('reports')}
-                disabled={userRole === 'employee'}
-                style={userRole === 'employee' ? {color: '#9ca3af', opacity: 0.5, cursor: 'not-allowed'} : activeTab === 'reports' ? {
-                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
-                  color: 'white',
-                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
-                  transform: 'scale(1.05)'
-                } : {color: '#374151'}}
-                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
-              >
-                <FileText className="w-4 h-4" />
-                <span>Relatórios</span>
-              </button>
-              <button
-                onClick={() => userRole !== 'employee' && setActiveTab('settings')}
-                disabled={userRole === 'employee'}
-                style={userRole === 'employee' ? {color: '#9ca3af', opacity: 0.5, cursor: 'not-allowed'} : activeTab === 'settings' ? {
-                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
-                  color: 'white',
-                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
-                  transform: 'scale(1.05)'
-                } : {color: '#374151'}}
-                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
-              >
-                <Settings className="w-4 h-4" />
-                <span>Configurações</span>
-              </button>
-              <button
-                onClick={() => userRole !== 'employee' && setActiveTab('teams')}
-                disabled={userRole === 'employee'}
-                style={userRole === 'employee' ? {color: '#9ca3af', opacity: 0.5, cursor: 'not-allowed'} : activeTab === 'teams' ? {
-                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
-                  color: 'white',
-                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
-                  transform: 'scale(1.05)'
-                } : {color: '#374151'}}
-                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
-              >
-                <Users className="w-4 h-4" />
-                <span>Equipes</span>
-              </button>
-              <button
-                onClick={() => userRole !== 'employee' && setActiveTab('users')}
-                disabled={userRole === 'employee'}
-                style={userRole === 'employee' ? {color: '#9ca3af', opacity: 0.5, cursor: 'not-allowed'} : activeTab === 'users' ? {
-                  background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
-                  color: 'white',
-                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
-                  transform: 'scale(1.05)'
-                } : {color: '#374151'}}
-                className="px-4 py-3 rounded-lg font-medium transition-all flex items-center gap-2 hover:bg-gray-100"
-              >
-                <Shield className="w-4 h-4" />
-                <span>Usuários</span>
+                <HelpCircle className={`${sidebarExpanded ? 'w-5 h-5' : 'w-6 h-6'} flex-shrink-0`} />
+                <span className={`ml-4 font-medium whitespace-nowrap overflow-hidden transition-all duration-300 ${
+                  sidebarExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0'
+                }`}>
+                  Ajuda
+                </span>
               </button>
             </div>
-
-            {/* Botão de Ajuda - Modernizado */}
-            <button
-              onClick={() => setShowHelp(true)}
-              className="flex items-center gap-2 px-4 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg font-medium transition-all"
-              title="Ajuda e Legendas"
-            >
-              <HelpCircle className="w-4 h-4" />
-              <span>Ajuda</span>
-            </button>
           </div>
         </div>
 
-        {/* Aviso para Colaboradores */}
-        {userRole === 'employee' && (
-          <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-200 rounded-full flex items-center justify-center border border-blue-400">
-                <span className="text-lg">👤</span>
-              </div>
-              <div>
-                <h3 className="font-semibold text-blue-900">Modo Colaborador</h3>
-                <p className="text-sm text-blue-800">
-                  Você tem acesso apenas à visualização do calendário. Para gerenciar pessoas, templates e configurações, 
-                  contate seu gestor ou administrador.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Calendar Tab */}
-        {activeTab === 'calendar' && (() => {
-          console.log('=== RENDERING CALENDAR ===');
-          console.log('Current schedules state:', schedules);
-          console.log('Total employees:', employees.length);
-          return null;
-        })()}
-        {activeTab === 'calendar' && (
-          <div className="space-y-6">
-            {/* Filtros e Controles de Salvamento */}
-            <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-300">
-              <h3 className="font-semibold mb-4 flex items-center gap-2 text-gray-900">
-                <Filter className="w-5 h-5" />
-                Filtros e Gerenciamento
-              </h3>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="relative">
-                  <label className="block text-sm font-medium text-gray-900 mb-2">
-                    Nickname
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Buscar por nick..."
-                    value={filters.employee}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setFilters(prev => ({ ...prev, employee: value }));
-                      setShowCalendarSuggestions(value.length > 0);
-                    }}
-                    onFocus={() => setShowCalendarSuggestions(filters.employee.length > 0)}
-                    onBlur={() => setTimeout(() => setShowCalendarSuggestions(false), 200)}
-                    className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300 text-sm"
-                  />
-
-                  {/* Dropdown de sugestões */}
-                  {showCalendarSuggestions && filters.employee.length > 0 && (
-                    (() => {
-                      const suggestions = employees.filter(emp =>
-                        emp.name.toLowerCase().includes(filters.employee.toLowerCase())
-                      );
-
-                      return suggestions.length > 0 ? (
-                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                          {suggestions.map(emp => (
-                            <button
-                              key={emp.id}
-                              type="button"
-                              onClick={() => {
-                                setFilters(prev => ({ ...prev, employee: emp.name }));
-                                setShowCalendarSuggestions(false);
-                              }}
-                              className="w-full px-3 py-2 text-left hover:bg-blue-50 border-b border-gray-200 last:border-b-0"
-                            >
-                              <div className="font-medium text-gray-900">{emp.name}</div>
-                              {emp.team && (
-                                <div className="text-xs text-gray-600">{emp.team}</div>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null;
-                    })()
-                  )}
+        {/* Conteúdo Principal com Margem para Sidebar */}
+        <div className={`transition-all duration-300 ${sidebarExpanded ? 'ml-64' : 'ml-20'}`}>
+          {/* Aviso para Colaboradores */}
+          {userRole === 'employee' && (
+            <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mb-6 mx-10">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-200 rounded-full flex items-center justify-center border border-blue-400">
+                  <span className="text-lg">👤</span>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-900 mb-2">
-                    Equipe
-                  </label>
-                  <select
-                    value={filters.team}
-                    onChange={(e) => setFilters(prev => ({ ...prev, team: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300 text-sm"
-                  >
-                    <option value="VAZIO">Nenhuma selecionada</option>
-                    <option value="">Todas as equipes</option>
-                    {teams.map(team => (
-                      <option key={team} value={team}>{team}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-900 mb-2">
-                    Status Atual
-                  </label>
-                  <select
-                    value={filters.currentStatus || ''}
-                    onChange={(e) => setFilters(prev => ({ ...prev, currentStatus: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300 text-sm"
-                  >
-                    <option value="">Todos os status</option>
-                    <option value="office">🟢 Presencial</option>
-                    <option value="home">🔵 Home Office</option>
-                    <option value="vacation">🟠 Férias</option>
-                    <option value="holiday">⚫ Plantão/Feriado</option>
-                  </select>
+                  <h3 className="font-semibold text-blue-900">Modo Colaborador</h3>
+                  <p className="text-sm text-blue-800">
+                    Você tem acesso apenas à visualização do calendário. Para gerenciar pessoas, templates e configurações,
+                    contate seu gestor ou administrador.
+                  </p>
                 </div>
               </div>
             </div>
+          )}
 
-            {/* Main Calendar */}
-            <div className="bg-white rounded-lg shadow-sm p-6 max-h-[80vh] overflow-y-auto border border-gray-300">
+          {/* Calendar Tab */}
+          {activeTab === 'calendar' && (() => {
+            console.log('=== RENDERING CALENDAR ===');
+            console.log('Current schedules state:', schedules);
+            console.log('Total employees:', employees.length);
+            return null;
+          })()}
+
+          {/* Calendar Tab - Layout com Calendário e Filtros Lado a Lado */}
+          {activeTab === 'calendar' && (
+            <div className="px-10 py-4 flex gap-4">
+              {/* Container do Calendário - Esquerda */}
+              <div className="flex-1">
+                <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-300">
               <div className="flex items-center justify-between mb-6">
                 <button
                   onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1))}
@@ -2159,29 +2128,6 @@ const ScheduleApp = () => {
                 </div>
               </div>
 
-              <div className="flex gap-6 mb-4 text-sm flex-wrap">
-                <div className="flex gap-4">
-                  {Object.entries(statusLabels).map(([key, label]) => (
-                    <div key={key} className="flex items-center gap-2">
-                      <div className={`w-4 h-4 rounded border border-gray-600 ${statusColors[key]}`}></div>
-                      <span className="font-medium text-gray-900">{label}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2 text-indigo-800 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-300">
-                  <Edit className="w-4 h-4" />
-                  <span className="text-sm font-medium">💡 Clique nos nomes para alternar</span>
-                </div>
-                {filters.currentStatus && (
-                  <div className="flex items-center gap-2 text-orange-800 bg-orange-50 px-3 py-1 rounded-lg border border-orange-300">
-                    <Filter className="w-4 h-4" />
-                    <span className="text-sm font-medium">
-                      🔍 Filtro ativo: {statusLabels[filters.currentStatus]}
-                    </span>
-                  </div>
-                )}
-              </div>
-
               {employees.length === 0 && (
                 <div className="text-center py-12">
                   <div className="text-6xl mb-4">📅</div>
@@ -2191,7 +2137,8 @@ const ScheduleApp = () => {
               )}
 
               {employees.length > 0 && (
-                <div className="grid grid-cols-7 gap-1">
+                <div className="overflow-y-auto max-h-[calc(100vh-250px)]">
+                  <div className="grid grid-cols-7 gap-1">
                   {weekDays.map(day => (
                     <div key={day} className="p-3 text-center font-medium text-gray-900 bg-gray-200 border border-gray-400 shadow-sm">
                       {day}
@@ -2516,27 +2463,138 @@ const ScheduleApp = () => {
                       </div>
                     );
                   })}
+                  </div>
                 </div>
               )}
+                </div>
+              </div>
+              {/* Fim do Container do Calendário */}
+
+              {/* Container de Filtros - Direita (Slide In/Out) */}
+              <div
+                className={`bg-white rounded-lg shadow-sm border border-gray-300 transition-all duration-300 ease-in-out overflow-hidden ${
+                  filtersSidebarExpanded ? 'w-96' : 'w-16'
+                }`}
+                onMouseEnter={() => setFiltersSidebarExpanded(true)}
+                onMouseLeave={() => setFiltersSidebarExpanded(false)}
+              >
+                <div className="p-4 h-full">
+                  <div className="flex items-center gap-2 mb-6">
+                    <Filter className={`flex-shrink-0 ${filtersSidebarExpanded ? 'w-5 h-5' : 'w-6 h-6'} text-gray-700`} />
+                    <h3 className={`font-semibold text-gray-900 whitespace-nowrap overflow-hidden transition-all duration-300 ${
+                      filtersSidebarExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0'
+                    }`}>
+                      Filtros
+                    </h3>
+                  </div>
+
+                  <div className={`space-y-4 ${filtersSidebarExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                    <div className="relative">
+                      <label className="block text-sm font-medium text-gray-900 mb-2">
+                        Nickname
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Buscar por nick..."
+                        value={filters.employee}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setFilters(prev => ({ ...prev, employee: value }));
+                          setShowCalendarSuggestions(value.length > 0);
+                        }}
+                        onFocus={() => setShowCalendarSuggestions(filters.employee.length > 0)}
+                        onBlur={() => setTimeout(() => setShowCalendarSuggestions(false), 200)}
+                        className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300 text-sm"
+                      />
+
+                      {/* Dropdown de sugestões */}
+                      {showCalendarSuggestions && filters.employee.length > 0 && (
+                        (() => {
+                          const suggestions = employees.filter(emp =>
+                            emp.name.toLowerCase().includes(filters.employee.toLowerCase())
+                          );
+
+                          return suggestions.length > 0 ? (
+                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                              {suggestions.map(emp => (
+                                <button
+                                  key={emp.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setFilters(prev => ({ ...prev, employee: emp.name }));
+                                    setShowCalendarSuggestions(false);
+                                  }}
+                                  className="w-full px-3 py-2 text-left hover:bg-blue-50 border-b border-gray-200 last:border-b-0"
+                                >
+                                  <div className="font-medium text-gray-900">{emp.name}</div>
+                                  {emp.team && (
+                                    <div className="text-xs text-gray-600">{emp.team}</div>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null;
+                        })()
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-900 mb-2">
+                        Equipe
+                      </label>
+                      <select
+                        value={filters.team}
+                        onChange={(e) => setFilters(prev => ({ ...prev, team: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300 text-sm"
+                      >
+                        <option value="VAZIO">Nenhuma selecionada</option>
+                        <option value="">Todas as equipes</option>
+                        {teams.map(team => (
+                          <option key={team} value={team}>{team}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-900 mb-2">
+                        Status Atual
+                      </label>
+                      <select
+                        value={filters.currentStatus || ''}
+                        onChange={(e) => setFilters(prev => ({ ...prev, currentStatus: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300 text-sm"
+                      >
+                        <option value="">Todos os status</option>
+                        <option value="office">🟢 Presencial</option>
+                        <option value="home">🔵 Home Office</option>
+                        <option value="vacation">🟠 Férias</option>
+                        <option value="holiday">⚫ Plantão/Feriado</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {/* Fim do Container de Filtros */}
             </div>
-          </div>
-        )}
+          )}
 
         {/* Templates Tab */}
         {/* Auto Tab - Nova Aba de Distribuição */}
         {activeTab === 'auto' && userRole !== 'employee' && (
-          <AutoTab
+          <div className="px-10 py-4">
+            <AutoTab
             employees={employees}
             userRole={userRole}
             targetOfficeCount={targetOfficeCount}
             onApplyCustomDistribution={applyCustomDistribution}
             onClearAllSchedules={clearAllSchedules}
           />
+          </div>
         )}
-        
+
         {/* Escalas Tab */}
         {activeTab === 'people' && userRole !== 'employee' && (
-          <div className="space-y-6">
+          <div className="space-y-4 px-10 py-4">
             <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-300">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-gray-900">Configuração de Escalas</h3>
@@ -3206,7 +3264,7 @@ const ScheduleApp = () => {
 
         {/* Reports Tab */}
         {activeTab === 'reports' && userRole !== 'employee' && (
-          <div className="space-y-6">
+          <div className="space-y-4 px-10 py-4">
             <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-300">
               <h3 className="font-semibold mb-4">📊 Configuração do Período de Análise</h3>
               
@@ -3495,7 +3553,7 @@ const ScheduleApp = () => {
 
         {/* Settings Tab */}
         {activeTab === 'settings' && userRole !== 'employee' && (
-          <div className="space-y-6">
+          <div className="space-y-4 px-10 py-4">
             <div className="bg-red-50 border-2 border-red-300 rounded-lg shadow-sm p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -3566,25 +3624,29 @@ const ScheduleApp = () => {
 
         {/* Teams Tab */}
         {activeTab === 'teams' && userRole !== 'employee' && (
-          <TeamsTab
-            teams={dbTeams}
-            onAddTeam={addTeam}
-            onUpdateTeam={updateTeam}
-            onDeleteTeam={deleteTeam}
-            userRole={userRole}
-          />
+          <div className="px-10 py-4">
+            <TeamsTab
+              teams={dbTeams}
+              onAddTeam={addTeam}
+              onUpdateTeam={updateTeam}
+              onDeleteTeam={deleteTeam}
+              userRole={userRole}
+            />
+          </div>
         )}
 
         {/* Users Tab */}
         {activeTab === 'users' && userRole !== 'employee' && (
-          <UsersTab
-            users={userProfiles}
-            teams={dbTeams}
-            onAddUser={addUserProfile}
-            onUpdateUser={updateUserProfile}
-            onDeleteUser={deleteUserProfile}
+          <div className="px-10 py-4">
+            <UsersTab
+              users={userProfiles}
+              teams={dbTeams}
+              onAddUser={addUserProfile}
+              onUpdateUser={updateUserProfile}
+              onDeleteUser={deleteUserProfile}
             currentUserRole={userRole}
           />
+          </div>
         )}
 
         {/* Modal de Salvamento */}
@@ -4183,6 +4245,8 @@ const ScheduleApp = () => {
             </div>
           </div>
         )}
+        </div>
+        {/* Fim do Conteúdo Principal */}
       </div>
     </div>
   );
