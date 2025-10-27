@@ -836,6 +836,104 @@ export const clearAllVacationsFromOrg = async (user: any) => {
   }
 };
 
+// Salvar feriado individual no Supabase
+export const saveHolidayToSupabase = async (user: any, date: string, name: string = 'Feriado') => {
+  if (!user) return;
+
+  try {
+    // Buscar organização do usuário
+    const { data: orgData } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('owner_id', user.id)
+      .single();
+
+    if (!orgData) throw new Error('Organization not found');
+
+    const { error } = await supabase
+      .from('holidays')
+      .upsert({
+        organization_id: orgData.id,
+        date: date,
+        name: name,
+        staff_ids: []
+      }, {
+        onConflict: 'organization_id,date'
+      });
+
+    if (error) throw error;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Salvar múltiplos feriados no Supabase
+export const saveHolidaysToSupabase = async (user: any, dates: string[]) => {
+  if (!user) return;
+
+  try {
+    // Buscar organização do usuário
+    const { data: orgData } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('owner_id', user.id)
+      .single();
+
+    if (!orgData) throw new Error('Organization not found');
+
+    const holidaysToInsert = dates.map(date => ({
+      organization_id: orgData.id,
+      date: date,
+      name: 'Feriado',
+      staff_ids: []
+    }));
+
+    const { error } = await supabase
+      .from('holidays')
+      .upsert(holidaysToInsert, {
+        onConflict: 'organization_id,date'
+      });
+
+    if (error) throw error;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Carregar feriados do Supabase
+export const loadHolidaysFromSupabase = async (user: any) => {
+  if (!user) return {};
+
+  try {
+    // Buscar organização do usuário
+    const { data: orgData } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('owner_id', user.id)
+      .single();
+
+    if (!orgData) return {};
+
+    const { data, error } = await supabase
+      .from('holidays')
+      .select('*')
+      .eq('organization_id', orgData.id);
+
+    if (error) throw error;
+
+    // Converter para formato { 'YYYY-MM-DD': true }
+    const holidaysMap: Record<string, boolean> = {};
+    data?.forEach(holiday => {
+      holidaysMap[holiday.date] = true;
+    });
+
+    return holidaysMap;
+  } catch (error) {
+    console.error('Error loading holidays:', error);
+    return {};
+  }
+};
+
 export const clearAllHolidaysFromOrg = async (user: any) => {
   if (!user) return;
 

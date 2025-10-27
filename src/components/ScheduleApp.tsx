@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Users, User, Home, Clock, Download, Filter, Plus, AlertTriangle, Settings, Copy, RotateCcw, FileText, Edit, X, HelpCircle, Trash2, Save, FolderOpen, Archive, Shield, LogOut, LayoutGrid, CalendarDays, CalendarClock } from 'lucide-react';
-import { useTeams, useUserProfiles, useEmployees, useSchedules, clearAllVacationsFromOrg, clearAllHolidaysFromOrg, clearAllWeekendShiftsFromOrg } from '../hooks/useSupabaseData';
+import { useTeams, useUserProfiles, useEmployees, useSchedules, clearAllVacationsFromOrg, clearAllHolidaysFromOrg, clearAllWeekendShiftsFromOrg, saveHolidaysToSupabase, loadHolidaysFromSupabase } from '../hooks/useSupabaseData';
 import { useAuth } from '../hooks/useAuth';
 import TeamsTab from './tabs/TeamsTab';
 import UsersTab from './tabs/UsersTab';
@@ -152,6 +152,17 @@ const ScheduleApp = () => {
       setSchedules(dbSchedules);
     }
   }, [dbSchedules]);
+
+  // Carregar feriados do Supabase
+  React.useEffect(() => {
+    const loadHolidays = async () => {
+      if (user) {
+        const holidaysData = await loadHolidaysFromSupabase(user);
+        setHolidays(holidaysData);
+      }
+    };
+    loadHolidays();
+  }, [user]);
 
   // Funções para sistema de múltiplos salvamentos
   const saveScheduleToSlot = async (slotId, customName = '') => {
@@ -1190,7 +1201,7 @@ const ScheduleApp = () => {
         console.log('All schedules saved to Supabase!');
         refreshSchedules();
 
-        // Salvar feriados no estado
+        // Salvar feriados no estado E no Supabase
         if (config.excludedDates && config.excludedDates.length > 0) {
           setHolidays(prev => {
             const newHolidays = { ...prev };
@@ -1199,6 +1210,11 @@ const ScheduleApp = () => {
             });
             return newHolidays;
           });
+
+          // Salvar no Supabase
+          saveHolidaysToSupabase(user, config.excludedDates)
+            .then(() => console.log('Holidays saved to Supabase'))
+            .catch(error => console.error('Error saving holidays to Supabase:', error));
         }
 
         const change = {
