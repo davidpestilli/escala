@@ -7,11 +7,18 @@ interface AutoTabProps {
   employees: Employee[];
   userRole: string;
   targetOfficeCount: number;
-  onApplyCustomDistribution: (config: {
-    officeDays: number;
-    targetPerDay: number;
-    excludedEmployeeIds: number[];
-  }) => void;
+  currentDate: Date;
+  schedules: Record<string, Record<string, string>>;
+  holidays: Record<string, boolean>;
+  onApplyCustomDistribution: (
+    config: {
+      officeDays: number;
+      targetPerDay: number;
+      excludedEmployeeIds: number[];
+      excludedDates: string[];
+    },
+    onComplete?: () => void
+  ) => void;
   onClearAllSchedules: () => void;
 }
 
@@ -19,40 +26,123 @@ interface DistributionConfig {
   officeDays: number | null;
   targetPerDay: number | null;
   excludedEmployeeIds: number[];
+  excludedDates: string[];
 }
 
 const AutoTab: React.FC<AutoTabProps> = ({
   employees,
   userRole,
   targetOfficeCount,
+  currentDate,
+  schedules,
+  holidays,
   onApplyCustomDistribution,
   onClearAllSchedules
 }) => {
   const [distributionConfig, setDistributionConfig] = useState<DistributionConfig>({
     officeDays: null,
     targetPerDay: null,
-    excludedEmployeeIds: []
+    excludedEmployeeIds: [],
+    excludedDates: []
   });
 
   const [showResumo, setShowResumo] = useState(false);
   const [isPersonListOpen, setIsPersonListOpen] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
+  const [isHolidayCalendarOpen, setIsHolidayCalendarOpen] = useState(false);
 
   if (userRole === 'employee') {
     return null;
   }
+
+  // Função para converter data em string YYYY-MM-DD
+  const dateToString = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Função para gerar dias do mês
+  const getDaysInMonth = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
+
+    const days: (Date | null)[] = [];
+    for (let i = 0; i < startingDayOfWeek; i++) {
+      days.push(null);
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+      days.push(new Date(year, month, day));
+    }
+    return days;
+  };
+
+  // Toggle feriado
+  const toggleHoliday = (date: Date) => {
+    const dateStr = dateToString(date);
+    setDistributionConfig(prev => {
+      const isHoliday = prev.excludedDates.includes(dateStr);
+      return {
+        ...prev,
+        excludedDates: isHoliday
+          ? prev.excludedDates.filter(d => d !== dateStr)
+          : [...prev.excludedDates, dateStr]
+      };
+    });
+  };
 
   // 1. Filtrar apenas pessoas disponíveis (variable)
   const availableEmployees = useMemo(() => {
     return employees.filter(emp => emp.type === 'variable');
   }, [employees]);
 
-  // 2. Contar pessoas incluídas (não excluídas)
+  // 1.5. Identificar "variable" com escala completa (todos os dias úteis preenchidos)
+  const variableWithCompleteSchedule = useMemo(() => {
+    // Obter todos os dias úteis do mês (excluindo fins de semana e feriados)
+    const allWorkDays = getDaysInMonth(currentDate).filter(day => {
+      if (!day) return false;
+      const dateStr = dateToString(day);
+      const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+      const isHoliday = holidays[dateStr];
+      return !isWeekend && !isHoliday;
+    });
+
+    const workDaysCount = allWorkDays.length;
+
+    // Verificar quais "variable" têm TODOS os dias úteis preenchidos no schedules
+    return availableEmployees.filter(emp => {
+      const empSchedule = schedules[emp.id];
+      if (!empSchedule) return false;
+
+      // Contar quantos dias úteis do mês atual têm status definido (office ou home)
+      const filledWorkDaysCount = allWorkDays.filter(day => {
+        const dateStr = dateToString(day);
+        const status = empSchedule[dateStr];
+        return status === 'office' || status === 'home';
+      }).length;
+
+      // Se tem TODOS os dias úteis preenchidos, auto-excluir
+      return filledWorkDaysCount === workDaysCount;
+    });
+  }, [availableEmployees, currentDate, schedules, holidays]);
+
+  // Auto-excluir "variable" com escala completa
+  const autoExcludedIds = useMemo(() => {
+    return variableWithCompleteSchedule.map(emp => emp.id);
+  }, [variableWithCompleteSchedule]);
+
+  // 2. Contar pessoas incluídas (não excluídas manualmente ou auto-excluídas)
   const includedCount = useMemo(() => {
     return availableEmployees.filter(
-      emp => !distributionConfig.excludedEmployeeIds.includes(emp.id)
+      emp => !distributionConfig.excludedEmployeeIds.includes(emp.id) &&
+             !autoExcludedIds.includes(emp.id)
     ).length;
-  }, [availableEmployees, distributionConfig.excludedEmployeeIds]);
+  }, [availableEmployees, distributionConfig.excludedEmployeeIds, autoExcludedIds]);
 
   // 3. Total registrado
   const totalRegistered = employees.length;
@@ -87,24 +177,32 @@ const AutoTab: React.FC<AutoTabProps> = ({
   const handleConfirm = async () => {
     setIsApplying(true);
 
-    // Chamar a função de distribuição
-    onApplyCustomDistribution({
-      officeDays: distributionConfig.officeDays!,
-      targetPerDay: distributionConfig.targetPerDay!,
-      excludedEmployeeIds: distributionConfig.excludedEmployeeIds
-    });
+    // Combinar exclusões manuais + auto-exclusões (variable com escala completa)
+    const allExcludedIds = [
+      ...distributionConfig.excludedEmployeeIds,
+      ...autoExcludedIds
+    ];
 
-    // Aguardar um tempo para as operações de Supabase serem concluídas
-    // (a função onApplyCustomDistribution é assíncrona mas não retorna Promise)
-    setTimeout(() => {
-      setIsApplying(false);
-      setShowResumo(false);
-      setDistributionConfig({
-        officeDays: null,
-        targetPerDay: null,
-        excludedEmployeeIds: []
-      });
-    }, 2000);
+    // Chamar a função de distribuição com callback de conclusão
+    onApplyCustomDistribution(
+      {
+        officeDays: distributionConfig.officeDays!,
+        targetPerDay: distributionConfig.targetPerDay!,
+        excludedEmployeeIds: allExcludedIds,
+        excludedDates: distributionConfig.excludedDates
+      },
+      () => {
+        // Callback chamado quando a distribuição termina
+        setIsApplying(false);
+        setShowResumo(false);
+        setDistributionConfig({
+          officeDays: null,
+          targetPerDay: null,
+          excludedEmployeeIds: [],
+          excludedDates: []
+        });
+      }
+    );
   };
 
   const handleCancel = () => {
@@ -147,7 +245,14 @@ const AutoTab: React.FC<AutoTabProps> = ({
             <div className="space-y-1 text-sm text-purple-800">
               <div>• Always Office: {employees.filter(e => e.type === 'always_office').length}</div>
               <div>• Always Home: {employees.filter(e => e.type === 'always_home').length}</div>
-              <div>• Variable: {availableEmployees.length}</div>
+              <div>
+                • Variable: {availableEmployees.length}
+                {variableWithCompleteSchedule.length > 0 && (
+                  <span className="text-xs text-purple-600 ml-1">
+                    ({variableWithCompleteSchedule.length} excluído{variableWithCompleteSchedule.length > 1 ? 's' : ''} - escala completa)
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -187,25 +292,46 @@ const AutoTab: React.FC<AutoTabProps> = ({
                 <div className="space-y-2">
                   {availableEmployees.map(emp => {
                     const isExcluded = distributionConfig.excludedEmployeeIds.includes(emp.id);
+                    const isAutoExcluded = autoExcludedIds.includes(emp.id);
                     return (
                       <div
                         key={emp.id}
-                        className="flex items-center justify-between p-3 rounded border border-gray-200 hover:bg-gray-50 transition"
+                        className={`flex items-center justify-between p-3 rounded border transition ${
+                          isAutoExcluded
+                            ? 'border-blue-300 bg-blue-50'
+                            : 'border-gray-200 hover:bg-gray-50'
+                        }`}
                       >
-                        <span className={isExcluded ? 'text-gray-400 line-through' : 'text-gray-900'}>
-                          {emp.name}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={isExcluded || isAutoExcluded ? 'text-gray-400 line-through' : 'text-gray-900'}>
+                            {emp.name}
+                          </span>
+                          {isAutoExcluded && (
+                            <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full">
+                              escala completa
+                            </span>
+                          )}
+                        </div>
                         <button
                           onClick={() => toggleExcludePerson(emp.id)}
+                          disabled={isAutoExcluded}
                           className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition ${
-                            isExcluded
-                              ? 'bg-red-100 border-red-500'
-                              : 'bg-white border-green-500 hover:bg-green-50'
+                            isAutoExcluded
+                              ? 'bg-gray-100 border-gray-300 cursor-not-allowed opacity-50'
+                              : isExcluded
+                                ? 'bg-red-100 border-red-500'
+                                : 'bg-white border-green-500 hover:bg-green-50'
                           }`}
-                          title={isExcluded ? 'Incluir nesta pessoa' : 'Excluir esta pessoa da distribuição'}
+                          title={
+                            isAutoExcluded
+                              ? 'Auto-excluído (escala completa)'
+                              : isExcluded
+                                ? 'Incluir nesta pessoa'
+                                : 'Excluir esta pessoa da distribuição'
+                          }
                         >
                           {isExcluded && <X className="w-4 h-4 text-red-600" />}
-                          {!isExcluded && <Check className="w-4 h-4 text-green-600 opacity-0 group-hover:opacity-100" />}
+                          {!isExcluded && !isAutoExcluded && <Check className="w-4 h-4 text-green-600 opacity-0 group-hover:opacity-100" />}
                         </button>
                       </div>
                     );
@@ -288,11 +414,107 @@ const AutoTab: React.FC<AutoTabProps> = ({
             </div>
           </div>
 
+          {/* Mini-Calendário de Feriados */}
+          <div className="mt-6">
+            <label className="block text-sm font-medium text-gray-900 mb-3">
+              Feriados (dias excluídos da distribuição)
+            </label>
+
+            {/* Botão para expandir/colapsar calendário */}
+            <button
+              onClick={() => setIsHolidayCalendarOpen(!isHolidayCalendarOpen)}
+              className="w-full flex items-center justify-between bg-white border border-gray-300 rounded-lg px-4 py-3 hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-700">
+                  {distributionConfig.excludedDates.length === 0
+                    ? 'Clique para marcar feriados'
+                    : `${distributionConfig.excludedDates.length} feriado(s) marcado(s)`
+                  }
+                </span>
+              </div>
+              <ChevronDown
+                className={`w-5 h-5 text-gray-500 transition-transform ${
+                  isHolidayCalendarOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+
+            {/* Calendário (exibido apenas quando aberto) */}
+            {isHolidayCalendarOpen && (
+              <div className="mt-3 bg-gray-50 rounded-lg p-4 border border-gray-300">
+                <div className="text-xs text-gray-600 mb-3">
+                  Clique nos dias para marcar/desmarcar como feriado. Feriados não contarão para a distribuição.
+                </div>
+
+                {/* Cabeçalho dias da semana */}
+                <div className="grid grid-cols-7 gap-1 mb-2">
+                  {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
+                    <div key={day} className="text-center text-xs font-medium text-gray-600 p-1">
+                      {day}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Grid de dias */}
+                <div className="grid grid-cols-7 gap-1">
+                  {getDaysInMonth(currentDate).map((day, index) => {
+                    if (!day) {
+                      return <div key={index} className="p-2"></div>;
+                    }
+
+                    const dateStr = dateToString(day);
+                    const isHoliday = distributionConfig.excludedDates.includes(dateStr);
+                    const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                    const isToday = new Date().toDateString() === day.toDateString();
+
+                    return (
+                      <button
+                        key={index}
+                        onClick={() => !isWeekend && toggleHoliday(day)}
+                        disabled={isWeekend}
+                        className={`
+                          p-2 text-xs rounded transition-all
+                          ${isWeekend
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : isHoliday
+                              ? 'bg-red-500 text-white font-semibold hover:bg-red-600 shadow'
+                              : 'bg-white border border-gray-300 hover:bg-gray-100'
+                          }
+                          ${isToday && !isWeekend ? 'ring-2 ring-blue-400' : ''}
+                        `}
+                        title={
+                          isWeekend
+                            ? 'Fim de semana'
+                            : isHoliday
+                              ? 'Feriado - Clique para desmarcar'
+                              : 'Dia útil - Clique para marcar como feriado'
+                        }
+                      >
+                        {day.getDate()}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Contador de feriados */}
+                {distributionConfig.excludedDates.length > 0 && (
+                  <div className="mt-3 text-xs text-red-600 font-medium">
+                    🔴 {distributionConfig.excludedDates.length} dia(s) marcado(s) como feriado
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Aviso */}
           {distributionConfig.officeDays && distributionConfig.targetPerDay && (
             <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
               ℹ️ Será distribuído: {includedCount} pessoas × {distributionConfig.officeDays} dias presenciais
               = {(includedCount * distributionConfig.officeDays)} presenças no mês
+              {distributionConfig.excludedDates.length > 0 && (
+                <span> (excluindo {distributionConfig.excludedDates.length} feriado(s))</span>
+              )}
             </div>
           )}
 
@@ -382,37 +604,46 @@ const AutoTab: React.FC<AutoTabProps> = ({
         </button>
       </div>
 
-      {/* ===== MODAL DE LOADING ===== */}
+      {/* ===== OVERLAY DE LOADING FULL-SCREEN (BLOQUEIA TODA A INTERFACE) ===== */}
       {isApplying && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full mx-4 text-center animate-fade-in">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[9999]"
+          style={{
+            cursor: 'wait',
+            pointerEvents: 'all'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.preventDefault()}
+        >
+          <div className="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full mx-4 text-center">
             {/* Spinner */}
             <div className="flex justify-center mb-6">
-              <div className="relative w-16 h-16">
+              <div className="relative w-20 h-20">
                 <div className="absolute inset-0 rounded-full border-4 border-gray-200"></div>
-                <div className="absolute inset-0 rounded-full border-4 border-blue-600 border-t-blue-600 animate-spin"></div>
+                <div className="absolute inset-0 rounded-full border-4 border-blue-600 border-t-transparent animate-spin"></div>
               </div>
             </div>
 
             {/* Texto */}
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Distribuindo Escalas...</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Processando distribuição equilibrada e salvando no banco de dados
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Distribuindo Escalas...</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              Processando distribuição equilibrada e salvando no banco de dados.<br/>
+              Por favor, aguarde...
             </p>
 
             {/* Linhas de progresso animadas */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <div className="flex-1 h-1 bg-gray-200 rounded overflow-hidden">
-                  <div className="h-full bg-blue-600 animate-pulse" style={{ width: '33%' }}></div>
+                <div className="flex-1 h-2 bg-gray-200 rounded overflow-hidden">
+                  <div className="h-full bg-blue-600 animate-pulse" style={{ width: '100%' }}></div>
                 </div>
-                <span className="text-xs text-gray-500">Calculando...</span>
+                <span className="text-xs text-gray-500 font-medium">Calculando...</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="flex-1 h-1 bg-gray-200 rounded overflow-hidden">
-                  <div className="h-full bg-green-600 animate-pulse" style={{ width: '66%' }}></div>
+                <div className="flex-1 h-2 bg-gray-200 rounded overflow-hidden">
+                  <div className="h-full bg-green-600 animate-pulse" style={{ width: '100%' }}></div>
                 </div>
-                <span className="text-xs text-gray-500">Salvando...</span>
+                <span className="text-xs text-gray-500 font-medium">Salvando...</span>
               </div>
             </div>
 

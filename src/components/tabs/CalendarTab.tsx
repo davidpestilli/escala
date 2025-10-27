@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Users, Filter, AlertTriangle, Edit } from 'lucide-react';
+import { Calendar, Users, Filter, AlertTriangle, Edit, Clock, LayoutGrid } from 'lucide-react';
 
 // Imports corrigidos com caminhos absolutos a partir de src/
 import { statusColors, statusLabels, monthNames, weekDays } from '../../constants/index.ts';
@@ -72,8 +72,9 @@ const CalendarTab = ({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
       {/* Sidebar */}
-      <div className="lg:col-span-1 max-h-[80vh] overflow-y-auto">
-        <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
+      <div className="lg:col-span-1 max-h-[80vh] overflow-y-auto space-y-4">
+        {/* Sidebar de Filtros */}
+        <div className="bg-white rounded-lg shadow-sm p-4">
           <h3 className="font-semibold mb-3 flex items-center gap-2">
             <Filter className="w-4 h-4" />
             Filtros
@@ -123,6 +124,34 @@ const CalendarTab = ({
                 <option value="holiday">⚫ Plantão/Feriado</option>
               </select>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Turno
+              </label>
+              <select
+                value={filters.shift || ''}
+                onChange={(e) => setFilters(prev => ({ ...prev, shift: e.target.value }))}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="">Ambos</option>
+                <option value="9-17">🌅 9-17</option>
+                <option value="11-19">🌆 11-19</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Sidebar de Visualizações */}
+        <div className="bg-white rounded-lg shadow-sm p-4">
+          <h3 className="font-semibold mb-3 flex items-center gap-2">
+            <LayoutGrid className="w-4 h-4" />
+            Visualizações
+          </h3>
+          <div className="space-y-2">
+            {/* Visualizações serão adicionadas aqui */}
+            <p className="text-sm text-gray-500 italic">
+              Em breve: diferentes modos de visualização do calendário
+            </p>
           </div>
         </div>
       </div>

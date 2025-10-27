@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Users, User, Home, Clock, Download, Filter, Plus, AlertTriangle, Settings, Copy, RotateCcw, FileText, Edit, X, HelpCircle, Trash2, Save, FolderOpen, Archive, Shield, LogOut } from 'lucide-react';
+import { Calendar, Users, User, Home, Clock, Download, Filter, Plus, AlertTriangle, Settings, Copy, RotateCcw, FileText, Edit, X, HelpCircle, Trash2, Save, FolderOpen, Archive, Shield, LogOut, LayoutGrid, CalendarDays, CalendarClock } from 'lucide-react';
 import { useTeams, useUserProfiles, useEmployees, useSchedules, clearAllVacationsFromOrg, clearAllHolidaysFromOrg, clearAllWeekendShiftsFromOrg } from '../hooks/useSupabaseData';
 import { useAuth } from '../hooks/useAuth';
 import TeamsTab from './tabs/TeamsTab';
@@ -26,7 +26,8 @@ const ScheduleApp = () => {
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [activeTab, setActiveTab] = useState('calendar');
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
-  const [filtersSidebarExpanded, setFiltersSidebarExpanded] = useState(false);
+  const [openFilterDropdown, setOpenFilterDropdown] = useState(null); // 'nickname', 'team', 'status', 'shift', null
+  const [calendarView, setCalendarView] = useState('hourly'); // 'monthly', 'weekly', 'daily', 'hourly'
 
   // Role agora vem do perfil do banco, com fallback para 'employee' se não houver perfil
   const userRole = currentUserProfile?.role || 'employee';
@@ -43,7 +44,7 @@ const ScheduleApp = () => {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
   
-  const [filters, setFilters] = useState({ employee: '', team: 'VAZIO', currentStatus: '', shift: '' });
+  const [filters, setFilters] = useState({ employee: '', team: '', currentStatus: '', shift: '' });
   const [showImportModal, setShowImportModal] = useState(false);
   const [importText, setImportText] = useState('');
   const [newEmployee, setNewEmployee] = useState({
@@ -52,12 +53,13 @@ const ScheduleApp = () => {
 
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [editingPerson, setEditingPerson] = useState(null);
-  const [expandedPersonId, setExpandedPersonId] = useState(null);
+  const [expandedPersonIds, setExpandedPersonIds] = useState([]); // Array para múltiplos cards abertos
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [activePersonTab, setActivePersonTab] = useState('dados');
-  const [personFilters, setPersonFilters] = useState({ name: '', type: '', team: 'VAZIO' });
+  const [personFilters, setPersonFilters] = useState({ name: '', type: '', team: '' });
   const [showNickSuggestions, setShowNickSuggestions] = useState(false);
   const [showCalendarSuggestions, setShowCalendarSuggestions] = useState(false);
+  const [gridColumns, setGridColumns] = useState(4); // 3, 4 ou 5 colunas
   const [showVacationForm, setShowVacationForm] = useState(false);
   const [vacationPersonId, setVacationPersonId] = useState(null);
   const [vacationData, setVacationData] = useState({ start: '', end: '' });
@@ -339,12 +341,12 @@ const ScheduleApp = () => {
         setChangeHistory([]);
         setSelectedPerson(null);
         setEditingPerson(null);
-        setExpandedPersonId(null);
+        setExpandedPersonIds([]);
         setHasUnsavedChanges(false);
         setActivePersonTab('dados');
         setVacationPersonId(null);
-        setFilters({ employee: '', team: 'VAZIO', currentStatus: '' });
-        setPersonFilters({ name: '', type: '', team: 'VAZIO' });
+        setFilters({ employee: '', team: '', currentStatus: '' });
+        setPersonFilters({ name: '', type: '', team: '' });
         
         const change = {
           id: Date.now(),
@@ -1022,28 +1024,43 @@ const ScheduleApp = () => {
     officeDays: number;
     targetPerDay: number;
     excludedEmployeeIds: number[];
-  }) => {
+    excludedDates: string[];
+  }, onComplete?: () => void) => {
     console.log('=== APPLY CUSTOM DISTRIBUTION ===');
     console.log('Config:', config);
     console.log('All employees:', employees.length);
 
-    const days = getDaysInMonth(currentDate).filter(day => day && day.getDay() >= 1 && day.getDay() <= 5);
+    const days = getDaysInMonth(currentDate).filter(day => {
+      if (!day || day.getDay() < 1 || day.getDay() > 5) return false;
+      const dateStr = dateToString(day);
+      return !config.excludedDates.includes(dateStr);
+    });
 
     // Separar funcionários por tipo e condição
     const alwaysOfficeEmps = employees.filter(emp => emp.type === 'always_office');
     const alwaysHomeEmps = employees.filter(emp => emp.type === 'always_home');
 
-    // Variable com escala manual definida (homeOfficeDays não vazio)
-    const variableWithManualSchedule = employees.filter(
-      emp => emp.type === 'variable' && emp.homeOfficeDays && emp.homeOfficeDays.length > 0
-    );
+    // Variable com escala manual definida (verificar no schedules se têm dias preenchidos)
+    const variableWithManualSchedule = employees.filter(emp => {
+      if (emp.type !== 'variable') return false;
+      if (!schedules[emp.id]) return false;
 
-    // Variable disponíveis para distribuição automática
+      // Verificar se tem pelo menos um dia útil do mês atual com status definido
+      const hasDaysInCurrentMonth = days.some(day => {
+        const dateStr = dateToString(day);
+        const status = schedules[emp.id][dateStr];
+        return status === 'office' || status === 'home';
+      });
+
+      return hasDaysInCurrentMonth;
+    });
+
+    // Variable disponíveis para distribuição automática (sem escala manual e não excluídos)
     const availableForDistribution = employees.filter(
       emp =>
         emp.type === 'variable' &&
         !config.excludedEmployeeIds.includes(emp.id) &&
-        (!emp.homeOfficeDays || emp.homeOfficeDays.length === 0) // Sem escala manual
+        !variableWithManualSchedule.find(v => v.id === emp.id) // Não tem escala manual
     );
 
     console.log('Always Office:', alwaysOfficeEmps.length);
@@ -1081,14 +1098,15 @@ const ScheduleApp = () => {
         newSchedules[emp.id][dateStr] = 'home';
       });
 
-      // PASSO 3: Aplicar escalas manuais (variable com homeOfficeDays definido)
+      // PASSO 3: Aplicar escalas manuais (variable com schedules definido)
       let manualOfficeCount = 0;
       variableWithManualSchedule.forEach(emp => {
-        if (emp.homeOfficeDays?.includes(dateStr)) {
-          newSchedules[emp.id][dateStr] = 'home';
-        } else {
-          newSchedules[emp.id][dateStr] = 'office';
-          manualOfficeCount++;
+        const status = schedules[emp.id]?.[dateStr];
+        if (status === 'office' || status === 'home') {
+          newSchedules[emp.id][dateStr] = status;
+          if (status === 'office') {
+            manualOfficeCount++;
+          }
         }
       });
 
@@ -1172,6 +1190,17 @@ const ScheduleApp = () => {
         console.log('All schedules saved to Supabase!');
         refreshSchedules();
 
+        // Salvar feriados no estado
+        if (config.excludedDates && config.excludedDates.length > 0) {
+          setHolidays(prev => {
+            const newHolidays = { ...prev };
+            config.excludedDates.forEach(dateStr => {
+              newHolidays[dateStr] = true;
+            });
+            return newHolidays;
+          });
+        }
+
         const change = {
           id: Date.now(),
           timestamp: new Date(),
@@ -1184,6 +1213,9 @@ const ScheduleApp = () => {
           `Escalas foram distribuídas com sucesso:\n\n• Dias presenciais: ${config.officeDays}\n• Meta presencial: ${config.targetPerDay} pessoas/dia\n• Pessoas distribuídas: ${availableForDistribution.length}\n• Escalas manuais preservadas: ${variableWithManualSchedule.length}`,
           'success'
         );
+
+        // Chamar callback de conclusão
+        if (onComplete) onComplete();
       })
       .catch(error => {
         console.error('Error saving schedules to Supabase:', error);
@@ -1192,6 +1224,9 @@ const ScheduleApp = () => {
           'Ocorreu um erro ao salvar as escalas.',
           'error'
         );
+
+        // Chamar callback de conclusão mesmo em caso de erro
+        if (onComplete) onComplete();
       });
   };
 
@@ -1469,7 +1504,7 @@ const ScheduleApp = () => {
           setNewEmployee({ name: '', type: 'variable', isManager: false, team: '', officeDays: 3, workingHours: '9-17' });
           setShowAddEmployee(false);
 
-          setExpandedPersonId(savedEmployee.id);
+          setExpandedPersonIds(prev => [...prev, savedEmployee.id]);
           setEditingPerson(savedEmployee);
           setHasUnsavedChanges(false);
           setActivePersonTab('dados');
@@ -1490,8 +1525,8 @@ const ScheduleApp = () => {
       setEmployees(prev => prev.filter(emp => emp.id !== personId));
 
       // Limpar estados relacionados
-      if (expandedPersonId === personId) {
-        setExpandedPersonId(null);
+      if (expandedPersonIds.includes(personId)) {
+        setExpandedPersonIds(prev => prev.filter(id => id !== personId));
         setEditingPerson(null);
         setHasUnsavedChanges(false);
       }
@@ -2110,7 +2145,577 @@ const ScheduleApp = () => {
           })()}
 
           {/* Calendar Tab - Layout com Calendário e Filtros Lado a Lado */}
-          {activeTab === 'calendar' && (
+          {activeTab === 'calendar' && (() => {
+            // Helper para obter os 7 dias da semana atual (domingo a sábado)
+            const getCurrentWeekDays = () => {
+              const today = new Date();
+              const dayOfWeek = today.getDay(); // 0 = domingo, 6 = sábado
+              const sunday = new Date(today);
+              sunday.setDate(today.getDate() - dayOfWeek);
+
+              const weekDays = [];
+              for (let i = 0; i < 7; i++) {
+                const day = new Date(sunday);
+                day.setDate(sunday.getDate() + i);
+                weekDays.push(day);
+              }
+              return weekDays;
+            };
+
+            // Helper para obter apenas o dia atual
+            const getTodayOnly = () => {
+              return [new Date()];
+            };
+
+            // Decide quais dias mostrar baseado na visualização
+            let daysToShow;
+            if (calendarView === 'weekly') {
+              daysToShow = getCurrentWeekDays();
+            } else if (calendarView === 'daily') {
+              daysToShow = getTodayOnly();
+            } else if (calendarView === 'hourly') {
+              daysToShow = getTodayOnly(); // Usa o dia de hoje para visualização hourly
+            } else {
+              daysToShow = days; // Visualização mensal (padrão)
+            }
+
+            // Renderização específica para visualização hourly
+            if (calendarView === 'hourly') {
+              const today = new Date();
+              const currentHour = today.getHours();
+              const hours = Array.from({ length: 11 }, (_, i) => i + 9); // 9 às 19
+
+              // Helper para determinar se um funcionário está presente em uma hora específica
+              const isEmployeePresentAtHour = (employee, hour) => {
+                const todayStr = dateToString(today);
+
+                // Verifica férias
+                if (vacations[todayStr]?.includes(employee.id)) return false;
+
+                // Verifica status do dia
+                const status = getEmployeeStatus(employee.id, today);
+                if (status === 'vacation') return false;
+
+                // Se não tem escala definida (status null), não mostrar
+                if (status === null) return false;
+
+                // Apenas mostrar se estiver presencial ou home office
+                if (status !== 'office' && status !== 'home') return false;
+
+                // Determina o turno do funcionário
+                const shift = employee.workingHours || '9-17';
+                const [startHour, endHour] = shift.split('-').map(Number);
+
+                // Verifica se a hora está dentro do turno
+                return hour >= startHour && hour < endHour;
+              };
+
+              return (
+                <div className="px-10 py-4 flex gap-4">
+                  <div className="flex-1">
+                    <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-300">
+                      <div className="mb-6">
+                        <h2 className="text-xl font-semibold text-gray-900">
+                          Visualização Hora a Hora - {today.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                        </h2>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <div className="overflow-y-scroll max-h-[calc(100vh-236px)]">
+                          {/* Cabeçalho das horas - CONGELADO */}
+                          <div className="grid gap-1 sticky top-0 z-20 bg-white shadow-md" style={{ gridTemplateColumns: `repeat(${hours.length}, minmax(120px, 1fr))` }}>
+                            {hours.map(hour => {
+                              const isCurrentHour = hour === currentHour;
+                              const presentEmployees = getSortedEmployees(
+                                getFilteredEmployeesForDay(today).filter(emp =>
+                                  isEmployeePresentAtHour(emp, hour)
+                                )
+                              );
+
+                              return (
+                                <div
+                                  key={hour}
+                                  className={`p-3 text-center font-bold border-b-4 ${
+                                    isCurrentHour
+                                      ? 'bg-blue-500 text-white border-blue-700'
+                                      : 'bg-gray-200 text-gray-900 border-gray-400'
+                                  }`}
+                                >
+                                  <div className="text-lg">
+                                    {hour}:00
+                                  </div>
+                                  {isCurrentHour && (
+                                    <div className="text-xs font-normal mt-1">AGORA</div>
+                                  )}
+                                  <div className={`flex items-center justify-center gap-1 mt-2 text-xs font-normal ${
+                                    isCurrentHour ? 'text-blue-100' : 'text-gray-600'
+                                  }`}>
+                                    <User className="w-3 h-3" />
+                                    <span>{presentEmployees.length}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Grid das colunas de funcionários */}
+                          <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${hours.length}, minmax(120px, 1fr))` }}>
+                          {hours.map(hour => {
+                            const isCurrentHour = hour === currentHour;
+                            const presentEmployees = getSortedEmployees(
+                              getFilteredEmployeesForDay(today).filter(emp =>
+                                isEmployeePresentAtHour(emp, hour)
+                              )
+                            ).sort((a, b) => {
+                              // Primeiro: ordenar por status (presencial antes de home)
+                              const statusA = getEmployeeStatus(a.id, today);
+                              const statusB = getEmployeeStatus(b.id, today);
+
+                              if (statusA === 'office' && statusB !== 'office') return -1;
+                              if (statusA !== 'office' && statusB === 'office') return 1;
+
+                              // Segundo: ordenar por horário (9-17 antes de 11-19)
+                              const hoursA = a.workingHours || '9-17';
+                              const hoursB = b.workingHours || '9-17';
+
+                              if (hoursA === '9-17' && hoursB === '11-19') return -1;
+                              if (hoursA === '11-19' && hoursB === '9-17') return 1;
+
+                              return 0;
+                            });
+
+                            return (
+                              <div
+                                key={`col-${hour}`}
+                                className={`border p-2 min-h-[350px] ${
+                                  isCurrentHour
+                                    ? 'bg-blue-50 border-blue-500 border-2'
+                                    : 'bg-white border-gray-300'
+                                }`}
+                              >
+                                <div className="space-y-1">
+                                  {presentEmployees.length === 0 ? (
+                                    <div className="text-xs text-gray-400 italic text-center mt-4">
+                                      Ninguém presente
+                                    </div>
+                                  ) : (
+                                    presentEmployees.map(emp => {
+                                      const status = getEmployeeStatus(emp.id, today);
+                                      const bgColor = status === 'office'
+                                        ? 'bg-green-100 border-green-500'
+                                        : 'bg-blue-100 border-blue-500';
+
+                                      return (
+                                        <div
+                                          key={emp.id}
+                                          className={`text-xs p-2 rounded border ${bgColor} ${
+                                            emp.isManager ? 'font-bold' : 'font-medium'
+                                          }`}
+                                          title={`${emp.name} - ${emp.workingHours || '9-17'} - ${status === 'office' ? 'Presencial' : 'Home Office'}`}
+                                        >
+                                          <div className="truncate">
+                                            {getDisplayName(emp.name)}
+                                          </div>
+                                          <div className="text-[10px] text-gray-600">
+                                            {emp.workingHours || '9-17'}
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sidebars */}
+                  <div className="flex flex-col gap-4">
+                    {/* Backdrop para fechar dropdowns ao clicar fora */}
+                    {openFilterDropdown && (
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setOpenFilterDropdown(null)}
+                      />
+                    )}
+
+                    {/* Container de Filtros - Fixo (mesmo código das outras visualizações) */}
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-300 h-[41.5vh] w-16 p-2 relative">
+                      <div className="flex flex-col items-center gap-4 mt-4">
+                        <Filter className="w-6 h-6 text-gray-700 mb-2" title="Filtros" />
+
+                        {/* Mesmos botões de filtro das outras visualizações */}
+                        <div className="relative">
+                          <button
+                            onClick={() => setOpenFilterDropdown(openFilterDropdown === 'nickname' ? null : 'nickname')}
+                            className={`p-2 rounded-lg transition-all relative ${
+                              openFilterDropdown === 'nickname'
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                            title="Filtro por Nickname"
+                          >
+                            <User className="w-6 h-6" />
+                            {filters.employee && (
+                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                            )}
+                          </button>
+                          {openFilterDropdown === 'nickname' && (
+                            <div className="absolute right-full mr-2 top-0 w-64 bg-white border border-gray-300 rounded-lg shadow-xl z-50">
+                              <div className="p-3">
+                                <div className="flex items-center justify-between mb-3">
+                                  <h4 className="font-semibold text-gray-900 text-sm">Colaborador</h4>
+                                  {filters.employee && (
+                                    <button
+                                      onClick={() => setFilters(prev => ({ ...prev, employee: '' }))}
+                                      className="text-xs text-red-600 hover:text-red-800"
+                                    >
+                                      Limpar
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="max-h-64 overflow-y-auto space-y-1">
+                                  <button
+                                    onClick={() => {
+                                      setFilters(prev => ({ ...prev, employee: '' }));
+                                      setOpenFilterDropdown(null);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                      !filters.employee
+                                        ? 'bg-blue-100 text-blue-900 font-medium'
+                                        : 'hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    Todos
+                                  </button>
+                                  {getSortedEmployees(employees).map(emp => (
+                                    <button
+                                      key={emp.id}
+                                      onClick={() => {
+                                        setFilters(prev => ({ ...prev, employee: emp.name }));
+                                        setOpenFilterDropdown(null);
+                                      }}
+                                      className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                        filters.employee === emp.name
+                                          ? 'bg-blue-100 text-blue-900 font-medium'
+                                          : 'hover:bg-gray-100'
+                                      }`}
+                                    >
+                                      <div className="font-medium">{emp.name}</div>
+                                      {emp.team && (
+                                        <div className="text-xs text-gray-600">{emp.team}</div>
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="relative">
+                          <button
+                            onClick={() => setOpenFilterDropdown(openFilterDropdown === 'team' ? null : 'team')}
+                            className={`p-2 rounded-lg transition-all relative ${
+                              openFilterDropdown === 'team'
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                            title="Filtro por Equipe"
+                          >
+                            <Users className="w-6 h-6" />
+                            {filters.team && filters.team !== '' && (
+                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                            )}
+                          </button>
+                          {openFilterDropdown === 'team' && (
+                            <div className="absolute right-full mr-2 top-0 w-56 bg-white border border-gray-300 rounded-lg shadow-xl z-50">
+                              <div className="p-3">
+                                <div className="flex items-center justify-between mb-3">
+                                  <h4 className="font-semibold text-gray-900 text-sm">Equipe</h4>
+                                  {filters.team && filters.team !== '' && (
+                                    <button
+                                      onClick={() => setFilters(prev => ({ ...prev, team: '' }))}
+                                      className="text-xs text-red-600 hover:text-red-800"
+                                    >
+                                      Limpar
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="space-y-1">
+                                  <button
+                                    onClick={() => {
+                                      setFilters(prev => ({ ...prev, team: '' }));
+                                      setOpenFilterDropdown(null);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                      filters.team === ''
+                                        ? 'bg-blue-100 text-blue-900 font-medium'
+                                        : 'hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    Todas as equipes
+                                  </button>
+                                  {teams.map(team => (
+                                    <button
+                                      key={team}
+                                      onClick={() => {
+                                        setFilters(prev => ({ ...prev, team }));
+                                        setOpenFilterDropdown(null);
+                                      }}
+                                      className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                        filters.team === team
+                                          ? 'bg-blue-100 text-blue-900 font-medium'
+                                          : 'hover:bg-gray-100'
+                                      }`}
+                                    >
+                                      {team}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="relative">
+                          <button
+                            onClick={() => setOpenFilterDropdown(openFilterDropdown === 'status' ? null : 'status')}
+                            className={`p-2 rounded-lg transition-all relative ${
+                              openFilterDropdown === 'status'
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                            title="Filtro por Status"
+                          >
+                            <Home className="w-6 h-6" />
+                            {filters.currentStatus && (
+                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                            )}
+                          </button>
+                          {openFilterDropdown === 'status' && (
+                            <div className="absolute right-full mr-2 top-0 w-56 bg-white border border-gray-300 rounded-lg shadow-xl z-50">
+                              <div className="p-3">
+                                <div className="flex items-center justify-between mb-3">
+                                  <h4 className="font-semibold text-gray-900 text-sm">Status Atual</h4>
+                                  {filters.currentStatus && (
+                                    <button
+                                      onClick={() => setFilters(prev => ({ ...prev, currentStatus: '' }))}
+                                      className="text-xs text-red-600 hover:text-red-800"
+                                    >
+                                      Limpar
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="space-y-1">
+                                  <button
+                                    onClick={() => {
+                                      setFilters(prev => ({ ...prev, currentStatus: '' }));
+                                      setOpenFilterDropdown(null);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                      !filters.currentStatus
+                                        ? 'bg-blue-100 text-blue-900 font-medium'
+                                        : 'hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    Todos os status
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setFilters(prev => ({ ...prev, currentStatus: 'office' }));
+                                      setOpenFilterDropdown(null);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                      filters.currentStatus === 'office'
+                                        ? 'bg-blue-100 text-blue-900 font-medium'
+                                        : 'hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    🟢 Presencial
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setFilters(prev => ({ ...prev, currentStatus: 'home' }));
+                                      setOpenFilterDropdown(null);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                      filters.currentStatus === 'home'
+                                        ? 'bg-blue-100 text-blue-900 font-medium'
+                                        : 'hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    🔵 Home Office
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setFilters(prev => ({ ...prev, currentStatus: 'vacation' }));
+                                      setOpenFilterDropdown(null);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                      filters.currentStatus === 'vacation'
+                                        ? 'bg-blue-100 text-blue-900 font-medium'
+                                        : 'hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    🟠 Férias
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setFilters(prev => ({ ...prev, currentStatus: 'holiday' }));
+                                      setOpenFilterDropdown(null);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                      filters.currentStatus === 'holiday'
+                                        ? 'bg-blue-100 text-blue-900 font-medium'
+                                        : 'hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    ⚫ Plantão/Feriado
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="relative">
+                          <button
+                            onClick={() => setOpenFilterDropdown(openFilterDropdown === 'shift' ? null : 'shift')}
+                            className={`p-2 rounded-lg transition-all relative ${
+                              openFilterDropdown === 'shift'
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                            title="Filtro por Turno"
+                          >
+                            <Clock className="w-6 h-6" />
+                            {filters.shift && filters.shift !== '' && filters.shift !== 'Ambos' && (
+                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                            )}
+                          </button>
+                          {openFilterDropdown === 'shift' && (
+                            <div className="absolute right-full mr-2 top-0 w-48 bg-white border border-gray-300 rounded-lg shadow-xl z-50">
+                              <div className="p-3">
+                                <div className="flex items-center justify-between mb-3">
+                                  <h4 className="font-semibold text-gray-900 text-sm">Turno</h4>
+                                  {filters.shift && filters.shift !== '' && (
+                                    <button
+                                      onClick={() => setFilters(prev => ({ ...prev, shift: '' }))}
+                                      className="text-xs text-red-600 hover:text-red-800"
+                                    >
+                                      Limpar
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="space-y-1">
+                                  <button
+                                    onClick={() => {
+                                      setFilters(prev => ({ ...prev, shift: '' }));
+                                      setOpenFilterDropdown(null);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                      !filters.shift || filters.shift === ''
+                                        ? 'bg-blue-100 text-blue-900 font-medium'
+                                        : 'hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    Ambos
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setFilters(prev => ({ ...prev, shift: '9-17' }));
+                                      setOpenFilterDropdown(null);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                      filters.shift === '9-17'
+                                        ? 'bg-blue-100 text-blue-900 font-medium'
+                                        : 'hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    🌅 9-17
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setFilters(prev => ({ ...prev, shift: '11-19' }));
+                                      setOpenFilterDropdown(null);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                      filters.shift === '11-19'
+                                        ? 'bg-blue-100 text-blue-900 font-medium'
+                                        : 'hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    🌆 11-19
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Container de Visualizações - Fixo */}
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-300 h-[42vh] w-16 p-2">
+                      <div className="flex flex-col items-center gap-4 mt-4">
+                        <LayoutGrid className="w-6 h-6 text-gray-700 mb-2" title="Visualizações do Calendário" />
+                        <button
+                          onClick={() => setCalendarView('monthly')}
+                          className={`p-2 rounded-lg transition-all ${
+                            calendarView === 'monthly'
+                              ? 'bg-blue-600 text-white shadow-md'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                          title="Visualização Mensal"
+                        >
+                          <Calendar className="w-6 h-6" />
+                        </button>
+                        <button
+                          onClick={() => setCalendarView('weekly')}
+                          className={`p-2 rounded-lg transition-all ${
+                            calendarView === 'weekly'
+                              ? 'bg-blue-600 text-white shadow-md'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                          title="Visualização Semanal"
+                        >
+                          <CalendarDays className="w-6 h-6" />
+                        </button>
+                        <button
+                          onClick={() => setCalendarView('daily')}
+                          className={`p-2 rounded-lg transition-all ${
+                            calendarView === 'daily'
+                              ? 'bg-blue-600 text-white shadow-md'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                          title="Visualização Diária"
+                        >
+                          <CalendarClock className="w-6 h-6" />
+                        </button>
+                        <button
+                          onClick={() => setCalendarView('hourly')}
+                          className={`p-2 rounded-lg transition-all ${
+                            calendarView === 'hourly'
+                              ? 'bg-blue-600 text-white shadow-md'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                          title="Visualização Hora a Hora"
+                        >
+                          <Clock className="w-6 h-6" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
             <div className="px-10 py-4 flex gap-4">
               {/* Container do Calendário - Esquerda */}
               <div className="flex-1">
@@ -2151,33 +2756,49 @@ const ScheduleApp = () => {
               )}
 
               {employees.length > 0 && (
-                <div className="overflow-y-scroll max-h-[calc(100vh-300px)]">
-                  {/* Dias da semana - Sticky */}
-                  <div className="grid grid-cols-7 gap-1 mb-1 sticky top-0 z-10 bg-white">
-                    {weekDays.map(day => (
-                      <div key={day} className="p-3 text-center font-medium text-gray-900 bg-gray-200 border border-gray-400 shadow-sm">
-                        {day}
-                      </div>
-                    ))}
-                  </div>
+                <div className="overflow-y-scroll max-h-[calc(100vh-250px)]">
+                  {/* Dias da semana - Sticky (apenas para mensal e semanal) */}
+                  {calendarView !== 'daily' && (
+                    <div className={`grid gap-1 mb-1 sticky top-0 z-10 bg-white ${
+                      calendarView === 'weekly' ? 'grid-cols-7' : 'grid-cols-7'
+                    }`}>
+                      {weekDays.map(day => (
+                        <div key={day} className="p-3 text-center font-medium text-gray-900 bg-gray-200 border border-gray-400 shadow-sm">
+                          {day}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Grid dos dias */}
-                  <div className="grid grid-cols-7 gap-1">
-                  {days.map((day, index) => {
+                  <div className={`grid gap-1 ${
+                    calendarView === 'daily' ? 'grid-cols-1' : 'grid-cols-7'
+                  }`}>
+                  {daysToShow.map((day, index) => {
                     if (!day) {
                       return <div key={index} className="p-2 min-h-[200px]"></div>;
                     }
-                    
+
                     const dayOfWeek = day.getDay();
                     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                     const officeCount = getOfficeCount(day);
                     const isOverCapacity = officeCount > maxCapacity;
-                    
+                    const isToday = new Date().toDateString() === day.toDateString();
+
                     if (isWeekend) {
                       return (
-                        <div key={index} className="border border-gray-400 min-h-[200px] bg-gray-100 shadow-md">
-                          <div className="p-2 text-center text-sm font-medium text-gray-700">
+                        <div key={index} className={`border min-h-[200px] bg-gray-100 shadow-md ${
+                          isToday
+                            ? 'border-4 border-blue-500 ring-2 ring-blue-300'
+                            : 'border-gray-400'
+                        }`}>
+                          <div className={`p-2 text-center text-sm font-medium ${
+                            isToday
+                              ? 'text-blue-700 font-bold bg-blue-100'
+                              : 'text-gray-700'
+                          }`}>
                             {day.getDate()}
+                            {isToday && <span className="ml-1 text-xs">HOJE</span>}
                           </div>
                           
                           {weekendShifts[dateToString(day)] ? (
@@ -2185,16 +2806,25 @@ const ScheduleApp = () => {
                               <div className="text-center text-gray-700 text-sm mb-3 font-medium">Plantão</div>
                               <div className="text-sm font-medium text-gray-900 mb-2">⚫ Plantão</div>
                               <div className="space-y-1 min-h-[60px] bg-gray-100 p-2 rounded border border-gray-400">
-                                {getSortedEmployees(getFilteredEmployeesForDay(day)).map(emp => {
+                                {getSortedEmployees(getFilteredEmployeesForDay(day))
+                                  .sort((a, b) => {
+                                    // Ordenar por horário (9-17 antes de 11-19)
+                                    const hoursA = a.workingHours || '9-17';
+                                    const hoursB = b.workingHours || '9-17';
+                                    if (hoursA === '9-17' && hoursB === '11-19') return -1;
+                                    if (hoursA === '11-19' && hoursB === '9-17') return 1;
+                                    return 0;
+                                  })
+                                  .map(emp => {
                                   const isOnDuty = weekendStaff[dateToString(day)]?.includes(emp.id);
                                   if (!isOnDuty) return null;
                                   
                                   return (
                                     <div
                                       key={emp.id}
-                                      className={`text-sm p-2 rounded transition-all cursor-pointer hover:opacity-80 hover:scale-105 border ${
-                                        emp.isManager 
-                                          ? 'bg-gray-200 text-gray-900 border-gray-600 font-semibold' 
+                                      className={`text-sm p-2 rounded transition-all cursor-pointer hover:shadow-lg hover:border-l-4 hover:border-l-blue-500 border ${
+                                        emp.isManager
+                                          ? 'bg-gray-200 text-gray-900 border-gray-600 font-semibold'
                                           : 'bg-gray-100 text-gray-800 border-gray-500 font-medium'
                                       }`}
                                       onClick={() => toggleWeekendStaff(day, emp.id)}
@@ -2222,6 +2852,14 @@ const ScheduleApp = () => {
                                   >
                                     <option value="">+ Adicionar ao plantão</option>
                                     {getSortedEmployees(getFilteredEmployeesForDay(day))
+                                      .sort((a, b) => {
+                                        // Ordenar por horário (9-17 antes de 11-19)
+                                        const hoursA = a.workingHours || '9-17';
+                                        const hoursB = b.workingHours || '9-17';
+                                        if (hoursA === '9-17' && hoursB === '11-19') return -1;
+                                        if (hoursA === '11-19' && hoursB === '9-17') return 1;
+                                        return 0;
+                                      })
                                       .filter(emp => !weekendStaff[dateToString(day)]?.includes(emp.id))
                                       .map(emp => (
                                         <option key={emp.id} value={emp.id}>
@@ -2259,16 +2897,23 @@ const ScheduleApp = () => {
                     }
                     
                     return (
-                      <div key={index} className="border border-gray-400 min-h-[200px] shadow-md">
+                      <div key={index} className={`border min-h-[200px] shadow-md ${
+                        isToday
+                          ? 'border-4 border-blue-500 ring-2 ring-blue-300'
+                          : 'border-gray-400'
+                      }`}>
                         <div className={`p-2 text-center text-sm font-medium relative border-b ${
-                          holidays[dateToString(day)] 
-                            ? 'bg-gray-500 text-white border-gray-700' 
-                            : isOverCapacity 
-                              ? 'bg-red-200 text-red-900 border-red-500' 
-                              : 'bg-gray-100 text-gray-900 border-gray-300'
+                          isToday
+                            ? 'bg-blue-500 text-white border-blue-700 font-bold'
+                            : holidays[dateToString(day)]
+                              ? 'bg-gray-500 text-white border-gray-700'
+                              : isOverCapacity
+                                ? 'bg-red-200 text-red-900 border-red-500'
+                                : 'bg-gray-100 text-gray-900 border-gray-300'
                         }`}>
                           <div className="flex items-center justify-center gap-1">
                             {day.getDate()}
+                            {isToday && <span className="ml-1 text-xs">HOJE</span>}
                             {userRole !== 'employee' && (
                               <button
                                 onClick={() => toggleHoliday(day)}
@@ -2293,16 +2938,25 @@ const ScheduleApp = () => {
                             <div className="text-center text-gray-700 text-sm mb-3 font-medium">Feriado</div>
                             <div className="text-sm font-medium text-gray-900 mb-2">⚫ Plantão</div>
                             <div className="space-y-1 min-h-[60px] bg-gray-100 p-2 rounded border border-gray-400">
-                              {getSortedEmployees(getFilteredEmployeesForDay(day)).map(emp => {
+                              {getSortedEmployees(getFilteredEmployeesForDay(day))
+                                .sort((a, b) => {
+                                  // Ordenar por horário (9-17 antes de 11-19)
+                                  const hoursA = a.workingHours || '9-17';
+                                  const hoursB = b.workingHours || '9-17';
+                                  if (hoursA === '9-17' && hoursB === '11-19') return -1;
+                                  if (hoursA === '11-19' && hoursB === '9-17') return 1;
+                                  return 0;
+                                })
+                                .map(emp => {
                                 const isOnDuty = holidayStaff[dateToString(day)]?.includes(emp.id);
                                 if (!isOnDuty) return null;
                                 
                                 return (
                                   <div
                                     key={emp.id}
-                                    className={`text-sm p-2 rounded transition-all cursor-pointer hover:opacity-80 hover:scale-105 border ${
-                                      emp.isManager 
-                                        ? 'bg-gray-300 text-gray-900 border-blue-600 font-semibold shadow-sm' 
+                                    className={`text-sm p-2 rounded transition-all cursor-pointer hover:shadow-lg hover:border-l-4 hover:border-l-blue-500 border ${
+                                      emp.isManager
+                                        ? 'bg-gray-300 text-gray-900 border-blue-600 font-semibold shadow-sm'
                                         : 'bg-gray-200 text-gray-800 border-blue-500 font-medium shadow-sm'
                                     }`}
                                     onClick={() => toggleHolidayStaff(day, emp.id)}
@@ -2330,6 +2984,14 @@ const ScheduleApp = () => {
                                 >
                                   <option value="">+ Adicionar ao plantão</option>
                                   {getSortedEmployees(getFilteredEmployeesForDay(day))
+                                    .sort((a, b) => {
+                                      // Ordenar por horário (9-17 antes de 11-19)
+                                      const hoursA = a.workingHours || '9-17';
+                                      const hoursB = b.workingHours || '9-17';
+                                      if (hoursA === '9-17' && hoursB === '11-19') return -1;
+                                      if (hoursA === '11-19' && hoursB === '9-17') return 1;
+                                      return 0;
+                                    })
                                     .filter(emp => !holidayStaff[dateToString(day)]?.includes(emp.id))
                                     .map(emp => (
                                       <option key={emp.id} value={emp.id}>
@@ -2346,9 +3008,18 @@ const ScheduleApp = () => {
                             <div className="p-2">
                               <div className="text-sm font-medium text-gray-900 mb-2">🟢 Presencial</div>
                               <div className="space-y-1 min-h-[60px] bg-green-50 p-2 rounded border border-green-300">
-                                {getSortedEmployees(getFilteredEmployeesForDay(day)).map(emp => {
+                                {getSortedEmployees(getFilteredEmployeesForDay(day))
+                                  .sort((a, b) => {
+                                    // Ordenar por horário (9-17 antes de 11-19)
+                                    const hoursA = a.workingHours || '9-17';
+                                    const hoursB = b.workingHours || '9-17';
+                                    if (hoursA === '9-17' && hoursB === '11-19') return -1;
+                                    if (hoursA === '11-19' && hoursB === '9-17') return 1;
+                                    return 0;
+                                  })
+                                  .map(emp => {
                                   const status = getEmployeeStatus(emp.id, day);
-                                  
+
                                   if (status !== 'office') return null;
                                   
                                   let borderClass = '';
@@ -2363,7 +3034,7 @@ const ScheduleApp = () => {
                                       key={emp.id}
                                       className={`text-sm p-2 rounded transition-all border ${borderClass} ${
                                         userRole !== 'employee' && emp.type === 'variable'
-                                          ? 'cursor-pointer hover:opacity-80 hover:scale-105' 
+                                          ? 'cursor-pointer hover:shadow-lg hover:border-l-4 hover:border-l-blue-500'
                                           : 'cursor-default'
                                       } ${
                                         emp.isManager 
@@ -2397,9 +3068,18 @@ const ScheduleApp = () => {
                             <div className="p-2">
                               <div className="text-sm font-medium text-gray-900 mb-2">🔵 Home Office</div>
                               <div className="space-y-1 min-h-[60px] bg-blue-50 p-2 rounded border border-blue-300">
-                                {getSortedEmployees(getFilteredEmployeesForDay(day)).map(emp => {
+                                {getSortedEmployees(getFilteredEmployeesForDay(day))
+                                  .sort((a, b) => {
+                                    // Ordenar por horário (9-17 antes de 11-19)
+                                    const hoursA = a.workingHours || '9-17';
+                                    const hoursB = b.workingHours || '9-17';
+                                    if (hoursA === '9-17' && hoursB === '11-19') return -1;
+                                    if (hoursA === '11-19' && hoursB === '9-17') return 1;
+                                    return 0;
+                                  })
+                                  .map(emp => {
                                   const status = getEmployeeStatus(emp.id, day);
-                                  
+
                                   if (status !== 'home') return null;
                                   
                                   let borderClass = '';
@@ -2414,7 +3094,7 @@ const ScheduleApp = () => {
                                       key={emp.id}
                                       className={`text-sm p-2 rounded transition-all border ${borderClass} ${
                                         userRole !== 'employee' && emp.type === 'variable'
-                                          ? 'cursor-pointer hover:opacity-80 hover:scale-105' 
+                                          ? 'cursor-pointer hover:shadow-lg hover:border-l-4 hover:border-l-blue-500'
                                           : 'cursor-default'
                                       } ${
                                         emp.isManager 
@@ -2449,9 +3129,18 @@ const ScheduleApp = () => {
                             <div className="p-2">
                               <div className="text-sm font-medium text-gray-900 mb-2">🟠 Férias</div>
                               <div className="space-y-1 min-h-[40px] bg-orange-50 p-2 rounded border border-orange-300">
-                                {getSortedEmployees(getFilteredEmployeesForDay(day)).map(emp => {
+                                {getSortedEmployees(getFilteredEmployeesForDay(day))
+                                  .sort((a, b) => {
+                                    // Ordenar por horário (9-17 antes de 11-19)
+                                    const hoursA = a.workingHours || '9-17';
+                                    const hoursB = b.workingHours || '9-17';
+                                    if (hoursA === '9-17' && hoursB === '11-19') return -1;
+                                    if (hoursA === '11-19' && hoursB === '9-17') return 1;
+                                    return 0;
+                                  })
+                                  .map(emp => {
                                   const status = getEmployeeStatus(emp.id, day);
-                                  
+
                                   if (status !== 'vacation') return null;
                                   
                                   return (
@@ -2488,166 +3177,409 @@ const ScheduleApp = () => {
               </div>
               {/* Fim do Container do Calendário */}
 
-              {/* Container de Filtros - Direita (Slide In/Out) */}
-              <div
-                className={`bg-white rounded-lg shadow-sm border border-gray-300 transition-all duration-300 ease-in-out overflow-hidden ${
-                  filtersSidebarExpanded ? 'w-68' : 'w-16'
-                }`}
-                onMouseEnter={() => setFiltersSidebarExpanded(true)}
-                onMouseLeave={() => setFiltersSidebarExpanded(false)}
-              >
-                <div className={`p-4 h-full transition-all duration-300 ${filtersSidebarExpanded ? '' : 'flex flex-col items-center justify-center gap-6'}`}>
-                  {!filtersSidebarExpanded ? (
-                    /* Ícones individuais quando recolhido - centralizados verticalmente */
-                    <div className="transition-opacity duration-300">
-                      {/* Ícone Nickname */}
-                      <div className="relative mb-6">
-                        <User className="w-6 h-6 text-gray-700" title="Filtro por Nickname" />
+              {/* Container dos Sidebars Empilhados - Direita */}
+              <div className="flex flex-col gap-4">
+                {/* Backdrop para fechar dropdowns ao clicar fora */}
+                {openFilterDropdown && (
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setOpenFilterDropdown(null)}
+                  />
+                )}
+
+                {/* Container de Filtros - Fixo */}
+                <div className="bg-white rounded-lg shadow-sm border border-gray-300 h-[41.5vh] w-16 p-2 relative">
+                  <div className="flex flex-col items-center gap-4 mt-4">
+                    <Filter className="w-6 h-6 text-gray-700 mb-2" title="Filtros" />
+
+                    {/* Botão Filtro Nickname */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setOpenFilterDropdown(openFilterDropdown === 'nickname' ? null : 'nickname')}
+                        className={`p-2 rounded-lg transition-all relative ${
+                          openFilterDropdown === 'nickname'
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                        title="Filtro por Nickname"
+                      >
+                        <User className="w-6 h-6" />
                         {filters.employee && (
                           <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
                         )}
-                      </div>
+                      </button>
 
-                      {/* Ícone Equipe */}
-                      <div className="relative mb-6">
-                        <Users className="w-6 h-6 text-gray-700" title="Filtro por Equipe" />
-                        {filters.team && filters.team !== '' && filters.team !== 'VAZIO' && (
-                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
-                        )}
-                      </div>
-
-                      {/* Ícone Status */}
-                      <div className="relative mb-6">
-                        <Home className="w-6 h-6 text-gray-700" title="Filtro por Status" />
-                        {filters.currentStatus && (
-                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
-                        )}
-                      </div>
-
-                      {/* Ícone Turno */}
-                      <div className="relative">
-                        <Clock className="w-6 h-6 text-gray-700" title="Filtro por Turno" />
-                        {filters.shift && filters.shift !== '' && filters.shift !== 'Ambos' && (
-                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    /* Conteúdo expandido com título */
-                    <div className="transition-opacity duration-300">
-                      <div className="flex items-center gap-2 mb-6">
-                        <Filter className="flex-shrink-0 w-5 h-5 text-gray-700" />
-                        <h3 className="font-semibold text-gray-900">
-                          Filtros
-                        </h3>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className={`space-y-4 transition-opacity duration-300 ${filtersSidebarExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-                    <div className="relative">
-                      <label className="block text-sm font-medium text-gray-900 mb-2">
-                        Nickname
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Buscar por nick..."
-                        value={filters.employee}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setFilters(prev => ({ ...prev, employee: value }));
-                          setShowCalendarSuggestions(value.length > 0);
-                        }}
-                        onFocus={() => setShowCalendarSuggestions(filters.employee.length > 0)}
-                        onBlur={() => setTimeout(() => setShowCalendarSuggestions(false), 200)}
-                        className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300 text-sm"
-                      />
-
-                      {/* Dropdown de sugestões */}
-                      {showCalendarSuggestions && filters.employee.length > 0 && (
-                        (() => {
-                          const suggestions = employees.filter(emp =>
-                            emp.name.toLowerCase().includes(filters.employee.toLowerCase())
-                          );
-
-                          return suggestions.length > 0 ? (
-                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                              {suggestions.map(emp => (
+                      {/* Dropdown Nickname */}
+                      {openFilterDropdown === 'nickname' && (
+                        <div className="absolute right-full mr-2 top-0 w-64 bg-white border border-gray-300 rounded-lg shadow-xl z-50">
+                          <div className="p-3">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="font-semibold text-gray-900 text-sm">Colaborador</h4>
+                              {filters.employee && (
+                                <button
+                                  onClick={() => setFilters(prev => ({ ...prev, employee: '' }))}
+                                  className="text-xs text-red-600 hover:text-red-800"
+                                >
+                                  Limpar
+                                </button>
+                              )}
+                            </div>
+                            <div className="max-h-64 overflow-y-auto space-y-1">
+                              <button
+                                onClick={() => {
+                                  setFilters(prev => ({ ...prev, employee: '' }));
+                                  setOpenFilterDropdown(null);
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                  !filters.employee
+                                    ? 'bg-blue-100 text-blue-900 font-medium'
+                                    : 'hover:bg-gray-100'
+                                }`}
+                              >
+                                Todos
+                              </button>
+                              {getSortedEmployees(employees).map(emp => (
                                 <button
                                   key={emp.id}
-                                  type="button"
                                   onClick={() => {
                                     setFilters(prev => ({ ...prev, employee: emp.name }));
-                                    setShowCalendarSuggestions(false);
+                                    setOpenFilterDropdown(null);
                                   }}
-                                  className="w-full px-3 py-2 text-left hover:bg-blue-50 border-b border-gray-200 last:border-b-0"
+                                  className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                    filters.employee === emp.name
+                                      ? 'bg-blue-100 text-blue-900 font-medium'
+                                      : 'hover:bg-gray-100'
+                                  }`}
                                 >
-                                  <div className="font-medium text-gray-900">{emp.name}</div>
+                                  <div className="font-medium">{emp.name}</div>
                                   {emp.team && (
                                     <div className="text-xs text-gray-600">{emp.team}</div>
                                   )}
                                 </button>
                               ))}
                             </div>
-                          ) : null;
-                        })()
+                          </div>
+                        </div>
                       )}
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-900 mb-2">
-                        Equipe
-                      </label>
-                      <select
-                        value={filters.team}
-                        onChange={(e) => setFilters(prev => ({ ...prev, team: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300 text-sm"
+                    {/* Botão Filtro Equipe */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setOpenFilterDropdown(openFilterDropdown === 'team' ? null : 'team')}
+                        className={`p-2 rounded-lg transition-all relative ${
+                          openFilterDropdown === 'team'
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                        title="Filtro por Equipe"
                       >
-                        <option value="VAZIO">Nenhuma selecionada</option>
-                        <option value="">Todas as equipes</option>
-                        {teams.map(team => (
-                          <option key={team} value={team}>{team}</option>
-                        ))}
-                      </select>
+                        <Users className="w-6 h-6" />
+                        {filters.team && filters.team !== '' && (
+                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                        )}
+                      </button>
+
+                      {/* Dropdown Equipe */}
+                      {openFilterDropdown === 'team' && (
+                        <div className="absolute right-full mr-2 top-0 w-56 bg-white border border-gray-300 rounded-lg shadow-xl z-50">
+                          <div className="p-3">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="font-semibold text-gray-900 text-sm">Equipe</h4>
+                              {filters.team && filters.team !== '' && (
+                                <button
+                                  onClick={() => setFilters(prev => ({ ...prev, team: '' }))}
+                                  className="text-xs text-red-600 hover:text-red-800"
+                                >
+                                  Limpar
+                                </button>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <button
+                                onClick={() => {
+                                  setFilters(prev => ({ ...prev, team: '' }));
+                                  setOpenFilterDropdown(null);
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                  filters.team === ''
+                                    ? 'bg-blue-100 text-blue-900 font-medium'
+                                    : 'hover:bg-gray-100'
+                                }`}
+                              >
+                                Todas as equipes
+                              </button>
+                              {teams.map(team => (
+                                <button
+                                  key={team}
+                                  onClick={() => {
+                                    setFilters(prev => ({ ...prev, team }));
+                                    setOpenFilterDropdown(null);
+                                  }}
+                                  className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                    filters.team === team
+                                      ? 'bg-blue-100 text-blue-900 font-medium'
+                                      : 'hover:bg-gray-100'
+                                  }`}
+                                >
+                                  {team}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-900 mb-2">
-                        Status Atual
-                      </label>
-                      <select
-                        value={filters.currentStatus || ''}
-                        onChange={(e) => setFilters(prev => ({ ...prev, currentStatus: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300 text-sm"
+                    {/* Botão Filtro Status */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setOpenFilterDropdown(openFilterDropdown === 'status' ? null : 'status')}
+                        className={`p-2 rounded-lg transition-all relative ${
+                          openFilterDropdown === 'status'
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                        title="Filtro por Status"
                       >
-                        <option value="">Todos os status</option>
-                        <option value="office">🟢 Presencial</option>
-                        <option value="home">🔵 Home Office</option>
-                        <option value="vacation">🟠 Férias</option>
-                        <option value="holiday">⚫ Plantão/Feriado</option>
-                      </select>
+                        <Home className="w-6 h-6" />
+                        {filters.currentStatus && (
+                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                        )}
+                      </button>
+
+                      {/* Dropdown Status */}
+                      {openFilterDropdown === 'status' && (
+                        <div className="absolute right-full mr-2 top-0 w-56 bg-white border border-gray-300 rounded-lg shadow-xl z-50">
+                          <div className="p-3">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="font-semibold text-gray-900 text-sm">Status Atual</h4>
+                              {filters.currentStatus && (
+                                <button
+                                  onClick={() => setFilters(prev => ({ ...prev, currentStatus: '' }))}
+                                  className="text-xs text-red-600 hover:text-red-800"
+                                >
+                                  Limpar
+                                </button>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <button
+                                onClick={() => {
+                                  setFilters(prev => ({ ...prev, currentStatus: '' }));
+                                  setOpenFilterDropdown(null);
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                  !filters.currentStatus
+                                    ? 'bg-blue-100 text-blue-900 font-medium'
+                                    : 'hover:bg-gray-100'
+                                }`}
+                              >
+                                Todos os status
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setFilters(prev => ({ ...prev, currentStatus: 'office' }));
+                                  setOpenFilterDropdown(null);
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                  filters.currentStatus === 'office'
+                                    ? 'bg-blue-100 text-blue-900 font-medium'
+                                    : 'hover:bg-gray-100'
+                                }`}
+                              >
+                                🟢 Presencial
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setFilters(prev => ({ ...prev, currentStatus: 'home' }));
+                                  setOpenFilterDropdown(null);
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                  filters.currentStatus === 'home'
+                                    ? 'bg-blue-100 text-blue-900 font-medium'
+                                    : 'hover:bg-gray-100'
+                                }`}
+                              >
+                                🔵 Home Office
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setFilters(prev => ({ ...prev, currentStatus: 'vacation' }));
+                                  setOpenFilterDropdown(null);
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                  filters.currentStatus === 'vacation'
+                                    ? 'bg-blue-100 text-blue-900 font-medium'
+                                    : 'hover:bg-gray-100'
+                                }`}
+                              >
+                                🟠 Férias
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setFilters(prev => ({ ...prev, currentStatus: 'holiday' }));
+                                  setOpenFilterDropdown(null);
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                  filters.currentStatus === 'holiday'
+                                    ? 'bg-blue-100 text-blue-900 font-medium'
+                                    : 'hover:bg-gray-100'
+                                }`}
+                              >
+                                ⚫ Plantão/Feriado
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-900 mb-2">
-                        Turno
-                      </label>
-                      <select
-                        value={filters.shift || ''}
-                        onChange={(e) => setFilters(prev => ({ ...prev, shift: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-400 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-300 text-sm"
+                    {/* Botão Filtro Turno */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setOpenFilterDropdown(openFilterDropdown === 'shift' ? null : 'shift')}
+                        className={`p-2 rounded-lg transition-all relative ${
+                          openFilterDropdown === 'shift'
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                        title="Filtro por Turno"
                       >
-                        <option value="">Ambos</option>
-                        <option value="9-17">🌅 9-17</option>
-                        <option value="11-19">🌆 11-19</option>
-                      </select>
+                        <Clock className="w-6 h-6" />
+                        {filters.shift && filters.shift !== '' && filters.shift !== 'Ambos' && (
+                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                        )}
+                      </button>
+
+                      {/* Dropdown Turno */}
+                      {openFilterDropdown === 'shift' && (
+                        <div className="absolute right-full mr-2 top-0 w-48 bg-white border border-gray-300 rounded-lg shadow-xl z-50">
+                          <div className="p-3">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="font-semibold text-gray-900 text-sm">Turno</h4>
+                              {filters.shift && filters.shift !== '' && (
+                                <button
+                                  onClick={() => setFilters(prev => ({ ...prev, shift: '' }))}
+                                  className="text-xs text-red-600 hover:text-red-800"
+                                >
+                                  Limpar
+                                </button>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <button
+                                onClick={() => {
+                                  setFilters(prev => ({ ...prev, shift: '' }));
+                                  setOpenFilterDropdown(null);
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                  !filters.shift || filters.shift === ''
+                                    ? 'bg-blue-100 text-blue-900 font-medium'
+                                    : 'hover:bg-gray-100'
+                                }`}
+                              >
+                                Ambos
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setFilters(prev => ({ ...prev, shift: '9-17' }));
+                                  setOpenFilterDropdown(null);
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                  filters.shift === '9-17'
+                                    ? 'bg-blue-100 text-blue-900 font-medium'
+                                    : 'hover:bg-gray-100'
+                                }`}
+                              >
+                                🌅 9-17
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setFilters(prev => ({ ...prev, shift: '11-19' }));
+                                  setOpenFilterDropdown(null);
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                  filters.shift === '11-19'
+                                    ? 'bg-blue-100 text-blue-900 font-medium'
+                                    : 'hover:bg-gray-100'
+                                }`}
+                              >
+                                🌆 11-19
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
+                {/* Fim do Container de Filtros */}
+
+                {/* Container de Visualizações - Fixo */}
+                <div className="bg-white rounded-lg shadow-sm border border-gray-300 h-[42vh] w-16 p-2">
+                  <div className="flex flex-col items-center gap-4 mt-4">
+                    <LayoutGrid className="w-6 h-6 text-gray-700 mb-2" title="Visualizações do Calendário" />
+
+                    {/* Botão Visualização Mensal */}
+                    <button
+                      onClick={() => setCalendarView('monthly')}
+                      className={`p-2 rounded-lg transition-all ${
+                        calendarView === 'monthly'
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                      title="Visualização Mensal"
+                    >
+                      <Calendar className="w-6 h-6" />
+                    </button>
+
+                    {/* Botão Visualização Semanal */}
+                    <button
+                      onClick={() => setCalendarView('weekly')}
+                      className={`p-2 rounded-lg transition-all ${
+                        calendarView === 'weekly'
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                      title="Visualização Semanal"
+                    >
+                      <CalendarDays className="w-6 h-6" />
+                    </button>
+
+                    {/* Botão Visualização Diária */}
+                    <button
+                      onClick={() => setCalendarView('daily')}
+                      className={`p-2 rounded-lg transition-all ${
+                        calendarView === 'daily'
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                      title="Visualização Diária"
+                    >
+                      <CalendarClock className="w-6 h-6" />
+                    </button>
+
+                    {/* Botão Visualização Hora a Hora */}
+                    <button
+                      onClick={() => setCalendarView('hourly')}
+                      className={`p-2 rounded-lg transition-all ${
+                        calendarView === 'hourly'
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                      title="Visualização Hora a Hora"
+                    >
+                      <Clock className="w-6 h-6" />
+                    </button>
+                  </div>
+                </div>
+                {/* Fim do Container de Visualizações */}
               </div>
-              {/* Fim do Container de Filtros */}
+              {/* Fim do Container dos Sidebars Empilhados */}
             </div>
-          )}
+            );
+          })()}
 
         {/* Templates Tab */}
         {/* Auto Tab - Nova Aba de Distribuição */}
@@ -2657,6 +3589,9 @@ const ScheduleApp = () => {
             employees={employees}
             userRole={userRole}
             targetOfficeCount={targetOfficeCount}
+            currentDate={currentDate}
+            schedules={schedules}
+            holidays={holidays}
             onApplyCustomDistribution={applyCustomDistribution}
             onClearAllSchedules={clearAllSchedules}
           />
@@ -2665,127 +3600,75 @@ const ScheduleApp = () => {
 
         {/* Escalas Tab */}
         {activeTab === 'people' && userRole !== 'employee' && (
-          <div className="space-y-4 px-10 py-4">
-            <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-300">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-gray-900">Configuração de Escalas</h3>
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={() => setShowImportModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 border border-green-800 font-medium"
-                  >
-                    <FileText className="w-4 h-4" />
-                    Importar Lista
-                  </button>
-                  <button
-                    onClick={() => setShowAddEmployee(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 border border-blue-800 font-medium"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Configurar Escala
-                  </button>
+          <div className="px-10 py-4 flex gap-4">
+            {/* Container Principal - Esquerda */}
+            <div className="flex-1">
+              <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-300">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-gray-900">Configuração de Escalas</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600 mr-2">Colunas:</span>
+                    <button
+                      onClick={() => setGridColumns(3)}
+                      className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                        gridColumns === 3
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      3
+                    </button>
+                    <button
+                      onClick={() => setGridColumns(4)}
+                      className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                        gridColumns === 4
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      4
+                    </button>
+                    <button
+                      onClick={() => setGridColumns(5)}
+                      className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                        gridColumns === 5
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      5
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              {/* Filters */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div className="relative">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Buscar por Nick
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Digite o nick do usuário..."
-                    value={personFilters.name}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setPersonFilters(prev => ({ ...prev, name: value }));
-                      setShowNickSuggestions(value.length > 0);
-                    }}
-                    onFocus={() => setShowNickSuggestions(personFilters.name.length > 0)}
-                    onBlur={() => setTimeout(() => setShowNickSuggestions(false), 200)}
-                    className="w-full px-3 py-2 border border-gray-400 rounded-lg text-sm"
-                  />
-
-                  {/* Dropdown de sugestões */}
-                  {showNickSuggestions && personFilters.name.length > 0 && (
-                    (() => {
-                      const suggestions = employees.filter(emp =>
-                        emp.name.toLowerCase().includes(personFilters.name.toLowerCase())
-                      );
-
-                      return suggestions.length > 0 ? (
-                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                          {suggestions.map(emp => (
-                            <button
-                              key={emp.id}
-                              type="button"
-                              onClick={() => {
-                                setPersonFilters(prev => ({ ...prev, name: emp.name }));
-                                setShowNickSuggestions(false);
-                              }}
-                              className="w-full px-3 py-2 text-left hover:bg-blue-50 border-b border-gray-200 last:border-b-0"
-                            >
-                              <div className="font-medium text-gray-900">{emp.name}</div>
-                              {emp.team && (
-                                <div className="text-xs text-gray-600">{emp.team}</div>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null;
-                    })()
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Filtrar por Equipe
-                  </label>
-                  <select
-                    value={personFilters.team || ''}
-                    onChange={(e) => setPersonFilters(prev => ({ ...prev, team: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-400 rounded-lg text-sm"
-                  >
-                    <option value="VAZIO">Nenhuma selecionada</option>
-                    <option value="">Todas as equipes</option>
-                    {dbTeams.map(team => (
-                      <option key={team.id} value={team.id}>
-                        {team.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
 
               {/* People Grid */}
-              <div className="border border-gray-400 rounded-lg p-4" style={{ maxHeight: '70vh', minHeight: '60vh' }}>
+              <div className="border border-gray-400 rounded-lg p-4 overflow-y-auto overflow-x-hidden" style={{ maxHeight: '75vh', minHeight: '75vh' }}>
                 {employees.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center py-12">
                     <div className="text-6xl mb-4">👥</div>
                     <h3 className="text-xl font-semibold text-gray-700 mb-2">Nenhuma pessoa cadastrada</h3>
-                    <p className="text-gray-600 mb-6 max-w-md">
-                      Comece adicionando pessoas individualmente ou importe uma lista completa de uma só vez.
+                    <p className="text-gray-600 max-w-md">
+                      Clique no botão + no sidebar para configurar uma nova escala.
                     </p>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => setShowImportModal(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 border border-green-800 font-medium"
-                      >
-                        <FileText className="w-4 h-4" />
-                        Importar Lista
-                      </button>
-                      <button
-                        onClick={() => setShowAddEmployee(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 border border-blue-800 font-medium"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Configurar Escala
-                      </button>
-                    </div>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {getSortedEmployees(getFilteredPeople()).map(person => {
+                  <div className={`grid gap-6 p-2 ${
+                    gridColumns === 3 ? 'grid-cols-3' :
+                    gridColumns === 4 ? 'grid-cols-4' :
+                    'grid-cols-5'
+                  }`}>
+                    {getSortedEmployees(getFilteredPeople())
+                      .sort((a, b) => {
+                        // Ordenar por status no dia atual: presencial primeiro
+                        const today = new Date();
+                        const statusA = getEmployeeStatus(a.id, today);
+                        const statusB = getEmployeeStatus(b.id, today);
+
+                        if (statusA === 'office' && statusB !== 'office') return -1;
+                        if (statusA !== 'office' && statusB === 'office') return 1;
+                        return 0;
+                      })
+                      .map(person => {
                       const status = getCurrentStatus(person.id);
                       const statusIcon = {
                         'office': '🟢',
@@ -2795,85 +3678,83 @@ const ScheduleApp = () => {
                         'always_home': '🔵',
                         'variable': '⚪'
                       };
-                      const isExpanded = expandedPersonId === person.id;
+                      const isExpanded = expandedPersonIds.includes(person.id);
                       const currentEditData = editingPerson || person;
 
                       return (
                         <div
                           key={person.id}
-                          className={`transition-all duration-300 rounded-lg border ${
-                            isExpanded 
-                              ? 'border-blue-500 bg-blue-50 shadow-lg' 
-                              : 'border-gray-400 bg-white hover:border-gray-500 hover:bg-gray-50'
+                          className={`transition-all duration-200 rounded-xl border-2 flex flex-col overflow-hidden ${
+                            isExpanded
+                              ? 'border-blue-500 bg-blue-50 shadow-2xl scale-[1.02]'
+                              : 'border-gray-300 bg-white shadow-md hover:shadow-xl hover:border-blue-400 hover:scale-[1.02]'
                           }`}
+                          style={{ transformOrigin: 'center' }}
                         >
-                          {/* Card Header */}
-                          <div className="p-4">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2 flex-1">
-                                <span className="text-lg">{statusIcon[status] || '⚪'}</span>
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-base truncate flex items-center gap-2 text-gray-900">
-                                    {person.name}
-                                    {person.isManager && (
-                                      <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded border border-purple-400 font-medium">
-                                        Gestor
-                                      </span>
-                                    )}
-                                  </div>
-                                  {person.team && (
-                                    <div className="text-sm text-gray-600 mt-1">{person.team}</div>
-                                  )}
+                          {/* Card Header Compacto */}
+                          <div className={`p-4 ${isExpanded ? 'bg-blue-100' : 'bg-gray-50'}`}>
+                            <div className="flex items-center justify-between mb-2 gap-2">
+                              {/* Esquerda: Status + Nome */}
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <span className="text-base flex-shrink-0">{statusIcon[status] || '⚪'}</span>
+                                <div className="font-medium text-sm truncate text-gray-900">
+                                  {person.name}
                                 </div>
                               </div>
-                              
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => {
-                                    setExpandedPersonId(person.id);
-                                    setEditingPerson(person);
-                                    setHasUnsavedChanges(false);
-                                    setActivePersonTab('dados');
-                                  }}
-                                  className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors border border-gray-400"
-                                  title="Editar pessoa"
-                                  disabled={userRole === 'employee'}
-                                >
-                                  <Edit className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    showConfirm(
-                                      '❌ Excluir Pessoa',
-                                      `Tem certeza que deseja excluir ${person.name}?`,
-                                      () => deletePerson(person.id),
-                                      'danger'
-                                    );
-                                  }}
-                                  className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors border border-red-400"
-                                  title="Excluir pessoa"
-                                  disabled={userRole === 'employee'}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+
+                              {/* Direita: Gestor + Equipe */}
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                {person.isManager && (
+                                  <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium whitespace-nowrap">
+                                    Gestor
+                                  </span>
+                                )}
+                                {person.team && (
+                                  <span className="text-xs text-gray-600 truncate max-w-[80px]" title={person.team}>
+                                    {person.team}
+                                  </span>
+                                )}
                               </div>
                             </div>
-                            
-                            <div className="mt-3">
+
+                            <div className="flex gap-2 mt-3">
                               <button
                                 onClick={() => {
                                   if (isExpanded) {
-                                    setExpandedPersonId(null);
-                                    setEditingPerson(null);
-                                    setHasUnsavedChanges(false);
+                                    // Remover do array de expandidos
+                                    setExpandedPersonIds(prev => prev.filter(id => id !== person.id));
+                                    if (editingPerson?.id === person.id) {
+                                      setEditingPerson(null);
+                                      setHasUnsavedChanges(false);
+                                    }
                                   } else {
-                                    setExpandedPersonId(person.id);
+                                    // Adicionar ao array de expandidos
+                                    setExpandedPersonIds(prev => [...prev, person.id]);
+                                    setEditingPerson(person);
+                                    setHasUnsavedChanges(false);
                                     setActivePersonTab('dados');
                                   }
                                 }}
-                                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 border border-blue-800 font-medium"
+                                className="flex-1 p-2 bg-white text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-all border-2 border-gray-300 hover:border-blue-400 text-xs font-medium shadow-sm"
+                                title={isExpanded ? "Fechar" : "Editar"}
+                                disabled={userRole === 'employee'}
                               >
-                                📋 {isExpanded ? 'Fechar Detalhes' : 'Ver Detalhes'}
+                                <Edit className="w-4 h-4 mx-auto" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  showConfirm(
+                                    '❌ Excluir Pessoa',
+                                    `Tem certeza que deseja excluir ${person.name}?`,
+                                    () => deletePerson(person.id),
+                                    'danger'
+                                  );
+                                }}
+                                className="flex-1 p-2 bg-white text-red-600 hover:bg-red-50 hover:text-red-700 rounded-lg transition-all border-2 border-red-300 hover:border-red-500 text-xs font-medium shadow-sm"
+                                title="Excluir"
+                                disabled={userRole === 'employee'}
+                              >
+                                <Trash2 className="w-4 h-4 mx-auto" />
                               </button>
                             </div>
                           </div>
@@ -2913,15 +3794,90 @@ const ScheduleApp = () => {
                                       <button
                                         onClick={() => {
                                           if (editingPerson) {
-                                            updatePerson(person.id, editingPerson);
-                                            setHasUnsavedChanges(false);
-                                            
-                                            const change = {
-                                              id: Date.now(),
-                                              timestamp: new Date(),
-                                              action: `Atualizou dados de ${editingPerson.name}`
-                                            };
-                                            setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
+                                            // Se estamos na aba 'escala' e a pessoa é 'variable', verificar dias em branco
+                                            if (activePersonTab === 'escala' && person.type === 'variable') {
+                                              // Obter todos os dias úteis do mês
+                                              const allDays = getDaysInMonth(currentDate).filter(day => {
+                                                if (!day) return false;
+                                                const dateStr = dateToString(day);
+                                                const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                                                const isHoliday = holidays[dateStr];
+                                                return !isWeekend && !isHoliday;
+                                              });
+
+                                              // Identificar dias em branco (não estão em homeOfficeDays)
+                                              const homeOfficeDays = person.homeOfficeDays || [];
+                                              const blankDays = allDays.filter(day => {
+                                                const dateStr = dateToString(day);
+                                                return !homeOfficeDays.includes(dateStr);
+                                              });
+
+                                              // Se há dias em branco, mostrar confirmação
+                                              if (blankDays.length > 0) {
+                                                showConfirm(
+                                                  '⚠️ Confirmar Salvamento',
+                                                  `Os ${blankDays.length} dia(s) deixado(s) em branco serão marcados como de trabalho presencial.\n\nDeseja continuar?`,
+                                                  () => {
+                                                    // Salvar todos os dias em branco como 'office'
+                                                    const savePromises = blankDays.map(day => {
+                                                      const dateStr = dateToString(day);
+                                                      // Atualizar schedules local
+                                                      setSchedules(prev => ({
+                                                        ...prev,
+                                                        [person.id]: {
+                                                          ...prev[person.id],
+                                                          [dateStr]: 'office'
+                                                        }
+                                                      }));
+                                                      // Salvar no Supabase
+                                                      return setEmployeeStatusDb(person.id, day, 'office');
+                                                    });
+
+                                                    Promise.all(savePromises).then(() => {
+                                                      // Atualizar dados básicos
+                                                      updatePerson(person.id, editingPerson);
+                                                      setHasUnsavedChanges(false);
+
+                                                      const change = {
+                                                        id: Date.now(),
+                                                        timestamp: new Date(),
+                                                        action: `Salvou escala de ${editingPerson.name} (${blankDays.length} dia(s) presencial)`
+                                                      };
+                                                      setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
+
+                                                      showAlert(
+                                                        '✅ Escala Salva!',
+                                                        `${blankDays.length} dia(s) foram marcados como presencial.\nEscala completa salva com sucesso.`,
+                                                        'success'
+                                                      );
+                                                    });
+                                                  },
+                                                  'info'
+                                                );
+                                              } else {
+                                                // Não há dias em branco, apenas salvar normalmente
+                                                updatePerson(person.id, editingPerson);
+                                                setHasUnsavedChanges(false);
+
+                                                const change = {
+                                                  id: Date.now(),
+                                                  timestamp: new Date(),
+                                                  action: `Atualizou dados de ${editingPerson.name}`
+                                                };
+                                                setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
+                                              }
+                                            } else {
+                                              // Não é aba 'escala' ou não é 'variable', salvar normalmente
+                                              updatePerson(person.id, editingPerson);
+                                              setHasUnsavedChanges(false);
+
+                                              const change = {
+                                                id: Date.now(),
+                                                timestamp: new Date(),
+                                                action: `Atualizou dados de ${editingPerson.name}`
+                                              };
+                                              setChangeHistory(prev => [change, ...prev.slice(0, 99)]);
+                                            }
                                           }
                                         }}
                                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 border border-green-800 font-medium"
@@ -3183,12 +4139,9 @@ const ScheduleApp = () => {
                                     {/* Mini-Calendário de Escala Manual (apenas para type === 'variable') */}
                                     {person.type === 'variable' && (
                                       <div className="bg-blue-50 p-4 rounded-lg border border-blue-300">
-                                        <div className="flex items-center justify-between mb-3">
+                                        <div className="mb-3">
                                           <div className="text-sm font-medium text-blue-900">
                                             📅 Escala Manual do Mês ({monthNames[currentDate.getMonth()]} {currentDate.getFullYear()})
-                                          </div>
-                                          <div className="text-xs text-blue-700">
-                                            Clique nos dias para marcar Home Office (🔵)
                                           </div>
                                         </div>
 
@@ -3210,14 +4163,16 @@ const ScheduleApp = () => {
 
                                               const dateStr = dateToString(day);
                                               const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-                                              const isHomeOffice = person.homeOfficeDays?.includes(dateStr);
+                                              const isHoliday = holidays[dateStr];
+                                              const status = getEmployeeStatus(person.id, day);
+                                              const isHomeOffice = status === 'home';
                                               const isToday = new Date().toDateString() === day.toDateString();
 
                                               return (
                                                 <button
                                                   key={index}
                                                   onClick={() => {
-                                                    if (isWeekend) return; // Não permitir clicar em fins de semana
+                                                    if (isWeekend || isHoliday) return; // Não permitir clicar em fins de semana ou feriados
 
                                                     const currentDays = person.homeOfficeDays || [];
                                                     const isCurrentlyHome = currentDays.includes(dateStr);
@@ -3256,29 +4211,30 @@ const ScheduleApp = () => {
 
                                                     setHasUnsavedChanges(true);
                                                   }}
-                                                  disabled={isWeekend}
+                                                  disabled={isWeekend || isHoliday}
                                                   className={`
                                                     p-2 text-xs rounded transition-all
                                                     ${isWeekend
                                                       ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                                      : isHomeOffice
-                                                        ? 'bg-blue-500 text-white font-semibold hover:bg-blue-600 shadow'
-                                                        : 'bg-white border border-gray-300 hover:bg-gray-50'
+                                                      : isHoliday
+                                                        ? 'bg-gray-400 text-white cursor-not-allowed'
+                                                        : isHomeOffice
+                                                          ? 'bg-blue-500 text-white font-semibold hover:bg-blue-600 shadow'
+                                                          : 'bg-white border border-gray-300 hover:bg-gray-50'
                                                     }
-                                                    ${isToday && !isWeekend ? 'ring-2 ring-yellow-400' : ''}
+                                                    ${isToday && !isWeekend && !isHoliday ? 'ring-2 ring-yellow-400' : ''}
                                                   `}
                                                   title={
                                                     isWeekend
                                                       ? 'Fim de semana'
-                                                      : isHomeOffice
-                                                        ? 'Home Office - Clique para alternar'
-                                                        : 'Presencial - Clique para marcar Home Office'
+                                                      : isHoliday
+                                                        ? 'Feriado'
+                                                        : isHomeOffice
+                                                          ? 'Home Office - Clique para alternar'
+                                                          : 'Presencial - Clique para marcar Home Office'
                                                   }
                                                 >
                                                   <div>{day.getDate()}</div>
-                                                  {!isWeekend && isHomeOffice && (
-                                                    <div className="text-xs">🔵</div>
-                                                  )}
                                                 </button>
                                               );
                                             })}
@@ -3286,8 +4242,8 @@ const ScheduleApp = () => {
                                         </div>
 
                                         {/* Legenda */}
-                                        <div className="flex items-center justify-between mt-3 text-xs text-gray-600">
-                                          <div className="flex items-center gap-3">
+                                        <div className="mt-3">
+                                          <div className="flex items-center gap-3 flex-wrap text-xs text-gray-600">
                                             <div className="flex items-center gap-1">
                                               <div className="w-4 h-4 bg-white border border-gray-300 rounded"></div>
                                               <span>Presencial</span>
@@ -3296,13 +4252,20 @@ const ScheduleApp = () => {
                                               <div className="w-4 h-4 bg-blue-500 rounded"></div>
                                               <span>Home Office</span>
                                             </div>
+                                            <div className="flex items-center gap-1">
+                                              <div className="w-4 h-4 bg-gray-400 rounded"></div>
+                                              <span>Feriado</span>
+                                            </div>
                                           </div>
-                                          <div className="text-blue-700 font-medium">
-                                            {person.homeOfficeDays?.filter(dateStr => {
-                                              const date = new Date(dateStr);
-                                              return date.getMonth() === currentDate.getMonth() &&
-                                                     date.getFullYear() === currentDate.getFullYear();
-                                            }).length || 0} dias de home office marcados
+                                          <div className="text-blue-700 font-medium text-xs mt-2">
+                                            {(() => {
+                                              const daysInMonth = getDaysInMonth(currentDate).filter(day => day);
+                                              const homeOfficeDays = daysInMonth.filter(day => {
+                                                const status = getEmployeeStatus(person.id, day);
+                                                return status === 'home';
+                                              });
+                                              return homeOfficeDays.length;
+                                            })()} dias de home office marcados
                                           </div>
                                         </div>
                                       </div>
@@ -3330,6 +4293,175 @@ const ScheduleApp = () => {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Sidebar de Filtros - Direita */}
+          <div className="flex flex-col gap-4">
+            {/* Backdrop para fechar dropdowns ao clicar fora */}
+            {openFilterDropdown && (
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setOpenFilterDropdown(null)}
+              />
+            )}
+
+            {/* Container de Filtros - Fixo */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-300 h-[41.5vh] w-16 p-2 relative">
+              <div className="flex flex-col items-center gap-4 mt-4">
+                <Filter className="w-6 h-6 text-gray-700 mb-2" title="Filtros" />
+
+                {/* Botão Filtro Nickname */}
+                <div className="relative">
+                  <button
+                    onClick={() => setOpenFilterDropdown(openFilterDropdown === 'nickname' ? null : 'nickname')}
+                    className={`p-2 rounded-lg transition-all relative ${
+                      openFilterDropdown === 'nickname'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                    title="Filtro por Nickname"
+                  >
+                    <User className="w-6 h-6" />
+                    {personFilters.name && (
+                      <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                    )}
+                  </button>
+
+                  {/* Dropdown Nickname */}
+                  {openFilterDropdown === 'nickname' && (
+                    <div className="absolute right-full mr-2 top-0 w-64 bg-white border border-gray-300 rounded-lg shadow-xl z-50">
+                      <div className="p-3">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="font-semibold text-gray-900 text-sm">Colaborador</h4>
+                          {personFilters.name && (
+                            <button
+                              onClick={() => setPersonFilters(prev => ({ ...prev, name: '' }))}
+                              className="text-xs text-red-600 hover:text-red-800"
+                            >
+                              Limpar
+                            </button>
+                          )}
+                        </div>
+                        <div className="max-h-64 overflow-y-auto space-y-1">
+                          <button
+                            onClick={() => {
+                              setPersonFilters(prev => ({ ...prev, name: '' }));
+                              setOpenFilterDropdown(null);
+                            }}
+                            className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                              !personFilters.name
+                                ? 'bg-blue-100 text-blue-900 font-medium'
+                                : 'hover:bg-gray-100'
+                            }`}
+                          >
+                            Todos
+                          </button>
+                          {getSortedEmployees(employees).map(emp => (
+                            <button
+                              key={emp.id}
+                              onClick={() => {
+                                setPersonFilters(prev => ({ ...prev, name: emp.name }));
+                                setOpenFilterDropdown(null);
+                              }}
+                              className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                personFilters.name === emp.name
+                                  ? 'bg-blue-100 text-blue-900 font-medium'
+                                  : 'hover:bg-gray-100'
+                              }`}
+                            >
+                              <div className="font-medium">{emp.name}</div>
+                              {emp.team && (
+                                <div className="text-xs text-gray-600">{emp.team}</div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Botão Filtro Equipe */}
+                <div className="relative">
+                  <button
+                    onClick={() => setOpenFilterDropdown(openFilterDropdown === 'team' ? null : 'team')}
+                    className={`p-2 rounded-lg transition-all relative ${
+                      openFilterDropdown === 'team'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                    title="Filtro por Equipe"
+                  >
+                    <Users className="w-6 h-6" />
+                    {personFilters.team && personFilters.team !== '' && (
+                      <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border border-white"></div>
+                    )}
+                  </button>
+
+                  {/* Dropdown Equipe */}
+                  {openFilterDropdown === 'team' && (
+                    <div className="absolute right-full mr-2 top-0 w-56 bg-white border border-gray-300 rounded-lg shadow-xl z-50">
+                      <div className="p-3">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="font-semibold text-gray-900 text-sm">Equipe</h4>
+                          {personFilters.team && personFilters.team !== '' && (
+                            <button
+                              onClick={() => setPersonFilters(prev => ({ ...prev, team: '' }))}
+                              className="text-xs text-red-600 hover:text-red-800"
+                            >
+                              Limpar
+                            </button>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <button
+                            onClick={() => {
+                              setPersonFilters(prev => ({ ...prev, team: '' }));
+                              setOpenFilterDropdown(null);
+                            }}
+                            className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                              personFilters.team === ''
+                                ? 'bg-blue-100 text-blue-900 font-medium'
+                                : 'hover:bg-gray-100'
+                            }`}
+                          >
+                            Todas as equipes
+                          </button>
+                          {dbTeams.map(team => (
+                            <button
+                              key={team.id}
+                              onClick={() => {
+                                setPersonFilters(prev => ({ ...prev, team: team.id }));
+                                setOpenFilterDropdown(null);
+                              }}
+                              className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                                personFilters.team === team.id
+                                  ? 'bg-blue-100 text-blue-900 font-medium'
+                                  : 'hover:bg-gray-100'
+                              }`}
+                            >
+                              {team.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Botão Adicionar Escala */}
+                <div className="relative mt-4 pt-4 border-t border-gray-300">
+                  <button
+                    onClick={() => setShowAddEmployee(true)}
+                    className="p-2 rounded-lg transition-all bg-blue-600 text-white hover:bg-blue-700 shadow-md"
+                    title="Configurar Escala"
+                  >
+                    <Plus className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
           </div>
         )}
 
